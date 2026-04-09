@@ -262,8 +262,8 @@ function Problems() {
         <motion.div variants={containerVariants} className="grid grid-cols-3 gap-4 mb-6">
           {[
             { label: 'Solved', value: problems.filter(p => p.solved).length, color: 'text-green-400' },
-            { label: 'Unsolved', value: problems.filter(p => !p.solved).length, color: 'text-yellow-400' },
-            { label: 'Total', value: problems.length, color: 'text-purple-400' },
+            { label: 'Unsolved', value: problems.filter(p => !p.solved && !p.attempted).length, color: 'text-yellow-400' },
+            { label: 'Attempt', value: problems.filter(p => p.attempted).length, color: 'text-purple-400' },
           ].map((stat, idx) => (
             <motion.div 
               key={idx}

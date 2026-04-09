@@ -130,15 +130,48 @@ function Dashboard() {
     { label: 'Problems Solved', value: '0', icon: '✅', color: 'text-green-400' },
   ];
 
-  // Dynamic recent activity based on user data
-  const recentActivity = userData && userData.solvedProblems && userData.solvedProblems.length > 0 ? [
+  // State for dashboard data
+  const [dashboardData, setDashboardData] = useState(null);
+  const [dashboardLoading, setDashboardLoading] = useState(true);
+
+  // Fetch dashboard data
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+
+        const response = await fetch('http://localhost:5001/api/dashboard', {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setDashboardData(data);
+        }
+      } catch (error) {
+        console.error('Error fetching dashboard data:', error);
+      } finally {
+        setDashboardLoading(false);
+      }
+    };
+
+    if (userData) {
+      fetchDashboardData();
+    }
+  }, [userData]);
+
+  // Dynamic recent activity based on dashboard data
+  const recentActivity = dashboardData?.recentActivity || (userData && userData.solvedProblems && userData.solvedProblems.length > 0 ? [
     // TODO: Fetch actual recent activity from API
     { type: 'Welcome', problem: 'Welcome to CodeArena!', difficulty: 'Getting Started', time: 'Just now', color: 'text-blue-400' },
   ] : [
     { type: 'Welcome', problem: 'Welcome to CodeArena!', difficulty: 'Getting Started', time: 'Just now', color: 'text-blue-400' },
     { type: 'Tip', problem: 'Start by solving easy problems', difficulty: 'Beginner', time: 'Ready to begin', color: 'text-green-400' },
     { type: 'Goal', problem: 'Complete your first problem', difficulty: 'Achievement', time: 'Next milestone', color: 'text-purple-400' },
-  ];
+  ]);
 
   const quickActions = [
     { label: 'Start Battle', icon: '⚔️', path: '/battle', color: 'bg-yellow-400 text-gray-950' },
@@ -174,7 +207,7 @@ function Dashboard() {
   };
 
   // Show loading state while fetching user data
-  if (loading) {
+  if (loading || dashboardLoading) {
     return (
       <div className={`min-h-screen flex items-center justify-center transition-colors duration-300 ${isDark ? 'bg-gray-950 text-white' : 'bg-gray-50 text-gray-900'}`}>
         <div className="text-center">
@@ -349,7 +382,10 @@ function Dashboard() {
 
         {/* Daily Streak Section */}
         <motion.div variants={itemVariants} className="mt-6">
-          <DailyStreak userStreak={userData?.streak || 0} goalDays={30} />
+          <DailyStreak 
+            userStreak={dashboardData?.streakData?.currentStreak || userData?.streak || 0} 
+            goalDays={30} 
+          />
         </motion.div>
         
         {/* Recent Activity */}
