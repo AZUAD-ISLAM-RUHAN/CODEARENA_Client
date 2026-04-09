@@ -6,9 +6,12 @@ import BattleStats from '../../components/BattleStats';
 import RatingGraph from '../../components/RatingGraph';
 import AchievementWall from '../../components/AchievementWall';
 import NotificationDropdown from '../../components/NotificationDropdown';
+import ThemeToggle from '../../components/ThemeToggle';
+import { useTheme } from '../../context/ThemeContext';
 
 function Profile() {
   const navigate = useNavigate();
+  const { isDark } = useTheme();
   const [activeTab, setActiveTab] = useState('overview');
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -188,10 +191,10 @@ function Profile() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-950 text-white flex items-center justify-center">
+      <div className={`min-h-screen flex items-center justify-center transition-colors duration-300 ${isDark ? 'bg-gray-950 text-white' : 'bg-white text-gray-900'}`}>
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-400 mx-auto mb-4"></div>
-          <p className="text-gray-400">Loading profile...</p>
+          <p className={isDark ? 'text-gray-400' : 'text-gray-600'}>Loading profile...</p>
         </div>
       </div>
     );
@@ -199,7 +202,7 @@ function Profile() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-gray-950 text-white flex items-center justify-center">
+      <div className={`min-h-screen flex items-center justify-center transition-colors duration-300 ${isDark ? 'bg-gray-950 text-white' : 'bg-white text-gray-900'}`}>
         <div className="text-center">
           <p className="text-red-400 mb-4">Error loading profile. Please try logging in again.</p>
           <button 
@@ -234,19 +237,19 @@ function Profile() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className={`min-h-screen transition-colors duration-300 ${isDark ? 'bg-gray-950 text-white' : 'bg-white text-gray-900'}`}>
       {/* Navbar */}
-      <nav className="bg-gray-900 border-b border-gray-800 px-6 py-4 flex items-center justify-between">
+      <nav className={`border-b px-6 py-4 flex items-center justify-between transition-colors duration-300 ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
         <h1 className="text-2xl font-bold cursor-pointer" onClick={() => navigate('/dashboard')}>
           Code<span className="text-yellow-400">Arena</span>
         </h1>
         <div className="flex items-center gap-4">
-          <button onClick={() => navigate('/dashboard')} className="text-gray-400 hover:text-white transition">Dashboard</button>
-          <button onClick={() => navigate('/problems')} className="text-gray-400 hover:text-white transition">Problems</button>
-          <button onClick={() => navigate('/battle')} className="text-gray-400 hover:text-white transition">Battle</button>
-          <button onClick={() => navigate('/leaderboard')} className="text-gray-400 hover:text-white transition">Leaderboard</button>
+          <button onClick={() => navigate('/dashboard')} className={`transition-colors ${isDark ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-gray-900'}`}>Dashboard</button>
+          <button onClick={() => navigate('/problems')} className={`transition-colors ${isDark ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-gray-900'}`}>Problems</button>
+          <button onClick={() => navigate('/battle')} className={`transition-colors ${isDark ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-gray-900'}`}>Battle</button>
+          <button onClick={() => navigate('/leaderboard')} className={`transition-colors ${isDark ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-gray-900'}`}>Leaderboard</button>
           
-          
+          <ThemeToggle />
 
           <NotificationDropdown />
           
@@ -254,24 +257,24 @@ function Profile() {
             <button className="w-9 h-9 rounded-full bg-yellow-400 text-gray-950 font-bold flex items-center justify-center">
               {getAvatarChar()}
             </button>
-            <div className="absolute right-0 mt-2 w-48 bg-gray-900 border border-gray-800 rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+            <div className={`absolute right-0 mt-2 w-48 border rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
               <div className="py-2">
                 <button 
                   onClick={() => navigate('/profile')}
-                  className="w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-800 hover:text-white transition"
+                  className={`w-full text-left px-4 py-2 transition-colors ${isDark ? 'text-gray-300 hover:bg-gray-800 hover:text-white' : 'text-gray-700 hover:bg-gray-100'}`}
                 >
                   👤 Profile
                 </button>
                 <button 
                   onClick={() => setIsEditing(true)}
-                  className="w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-800 hover:text-white transition"
+                  className={`w-full text-left px-4 py-2 transition-colors ${isDark ? 'text-gray-300 hover:bg-gray-800 hover:text-white' : 'text-gray-700 hover:bg-gray-100'}`}
                 >
                   ✏️ Edit Profile
                 </button>
-                <hr className="border-gray-800 my-2" />
+                <hr className={`my-2 ${isDark ? 'border-gray-800' : 'border-gray-200'}`} />
                 <button 
                   onClick={handleLogout}
-                  className="w-full text-left px-4 py-2 text-red-400 hover:bg-red-500/10 transition"
+                  className={`w-full text-left px-4 py-2 transition-colors ${isDark ? 'text-red-400 hover:bg-red-500/10' : 'text-red-600 hover:bg-red-50'}`}
                 >
                   🚪 Logout
                 </button>
@@ -291,7 +294,7 @@ function Profile() {
         )}
 
         {/* Profile Header / Edit Form */}
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 mb-6">
+        <div className={`border rounded-2xl p-8 mb-6 ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
           {!isEditing ? (
             // View Mode
             <div className="flex items-start justify-between">

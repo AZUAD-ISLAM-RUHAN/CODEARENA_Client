@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import NotificationDropdown from '../../components/NotificationDropdown';
+import ThemeToggle from '../../components/ThemeToggle';
+import { useTheme } from '../../context/ThemeContext';
 
 function Contest() {
   const navigate = useNavigate();
+  const { isDark } = useTheme();
   const [activeTab, setActiveTab] = useState('upcoming');
   const [registeredContests, setRegisteredContests] = useState([2]);
   const [user] = useState(() => {
@@ -231,19 +234,19 @@ function Contest() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className={`min-h-screen transition-colors duration-300 ${isDark ? 'bg-gray-950 text-white' : 'bg-white text-gray-900'}`}>
       {/* Navbar */}
-      <nav className="bg-gray-900 border-b border-gray-800 px-6 py-4 flex items-center justify-between">
+      <nav className={`border-b px-6 py-4 flex items-center justify-between transition-colors duration-300 ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
         <h1 className="text-2xl font-bold cursor-pointer" onClick={() => navigate('/dashboard')}>
           Code<span className="text-yellow-400">Arena</span>
         </h1>
         <div className="flex items-center gap-4">
-          <button onClick={() => navigate('/dashboard')} className="text-gray-400 hover:text-white transition">Dashboard</button>
-          <button onClick={() => navigate('/problems')} className="text-gray-400 hover:text-white transition">Problems</button>
-          <button onClick={() => navigate('/battle')} className="text-gray-400 hover:text-white transition">Battle</button>
-          <button onClick={() => navigate('/leaderboard')} className="text-gray-400 hover:text-white transition">Leaderboard</button>
+          <button onClick={() => navigate('/dashboard')} className={`transition-colors ${isDark ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-gray-900'}`}>Dashboard</button>
+          <button onClick={() => navigate('/problems')} className={`transition-colors ${isDark ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-gray-900'}`}>Problems</button>
+          <button onClick={() => navigate('/battle')} className={`transition-colors ${isDark ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-gray-900'}`}>Battle</button>
+          <button onClick={() => navigate('/leaderboard')} className={`transition-colors ${isDark ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-gray-900'}`}>Leaderboard</button>
           
-          
+          <ThemeToggle />
 
           <NotificationDropdown />
           
@@ -263,24 +266,24 @@ function Contest() {
                 {user.name ? user.name.charAt(0).toUpperCase() : 'A'}
               </button>
             )}
-            <div className="absolute right-0 mt-2 w-48 bg-gray-900 border border-gray-800 rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+            <div className={`absolute right-0 mt-2 w-48 border rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
               <div className="py-2">
                 <button 
                   onClick={() => navigate('/profile')}
-                  className="w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-800 hover:text-white transition"
+                  className={`w-full text-left px-4 py-2 transition-colors ${isDark ? 'text-gray-300 hover:bg-gray-800 hover:text-white' : 'text-gray-700 hover:bg-gray-100'}`}
                 >
                   👤 Profile
                 </button>
                 <button 
                   onClick={() => navigate('/profile')}
-                  className="w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-800 hover:text-white transition"
+                  className={`w-full text-left px-4 py-2 transition-colors ${isDark ? 'text-gray-300 hover:bg-gray-800 hover:text-white' : 'text-gray-700 hover:bg-gray-100'}`}
                 >
                   ⚙️ Settings
                 </button>
-                <hr className="border-gray-800 my-2" />
+                <hr className={`my-2 ${isDark ? 'border-gray-800' : 'border-gray-200'}`} />
                 <button 
                   onClick={handleLogout}
-                  className="w-full text-left px-4 py-2 text-red-400 hover:bg-red-500/10 transition"
+                  className={`w-full text-left px-4 py-2 transition-colors ${isDark ? 'text-red-400 hover:bg-red-500/10' : 'text-red-600 hover:bg-red-50'}`}
                 >
                   🚪 Logout
                 </button>
@@ -294,26 +297,26 @@ function Contest() {
         {/* Header */}
         <div className="mb-8">
           <h2 className="text-3xl font-bold">Contest <span className="text-yellow-400">Arena</span></h2>
-          <p className="text-gray-400 mt-1">Compete in timed contests, win prizes, climb the ranks!</p>
+          <p className={`mt-1 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Compete in timed contests, win prizes, climb the ranks!</p>
         </div>
 
         {/* Stats Bar */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
+          <div className={`border rounded-xl p-4 text-center ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-gray-50 border-gray-200'}`}>
             <div className="text-2xl font-bold text-blue-400">3</div>
-            <div className="text-gray-400 text-sm">Upcoming</div>
+            <div className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Upcoming</div>
           </div>
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
+          <div className={`border rounded-xl p-4 text-center ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-gray-50 border-gray-200'}`}>
             <div className="text-2xl font-bold text-green-400">1</div>
-            <div className="text-gray-400 text-sm">Live Now</div>
+            <div className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Live Now</div>
           </div>
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
+          <div className={`border rounded-xl p-4 text-center ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-gray-50 border-gray-200'}`}>
             <div className="text-2xl font-bold text-purple-400">12</div>
-            <div className="text-gray-400 text-sm">Participated</div>
+            <div className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Participated</div>
           </div>
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
+          <div className={`border rounded-xl p-4 text-center ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-gray-50 border-gray-200'}`}>
             <div className="text-2xl font-bold text-yellow-400">🏆</div>
-            <div className="text-gray-400 text-sm">2 Wins</div>
+            <div className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>2 Wins</div>
           </div>
         </div>
 

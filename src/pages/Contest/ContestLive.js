@@ -1,6 +1,7 @@
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
+import ThemeToggle from '../../components/ThemeToggle';
 
 const contests = [
   { id: 1, title: 'Weekly Contest 15', description: 'Standard weekly contest with mixed difficulty problems', status: 'upcoming', startTime: new Date(Date.now() + 86400000 * 2), endTime: new Date(Date.now() + 86400000 * 2 + 5400000), duration: 90, participants: 342, maxParticipants: 500, difficulty: 'Mixed' },
@@ -106,14 +107,17 @@ function ContestLive() {
 
   return (
     <div className={`min-h-screen p-8 ${isDark ? 'bg-gray-950 text-white' : 'bg-white text-gray-900'}`}>
-      <button onClick={() => navigate('/contest')} className="mb-6 px-4 py-2 bg-gray-700 text-white rounded-lg">← Back to Contests</button>
+      <div className="flex items-center justify-between mb-6">
+        <button onClick={() => navigate('/contest')} className={`px-4 py-2 rounded-lg ${isDark ? 'bg-gray-700 text-white' : 'bg-gray-200 text-gray-900'}`}>← Back to Contests</button>
+        <ThemeToggle />
+      </div>
       <h2 className="text-3xl font-bold">{contest.title}</h2>
-      <p className="text-gray-400 mt-2">{contest.description}</p>
-      <div className="mt-4 space-y-2 text-sm text-gray-300">
-        <div><span className="text-gray-100 font-semibold">Status:</span> {contest.status}</div>
-        <div><span className="text-gray-100 font-semibold">Duration:</span> {contest.duration} mins</div>
-        <div><span className="text-gray-100 font-semibold">Participants:</span> {contest.participants} / {contest.maxParticipants}</div>
-        <div><span className="text-gray-100 font-semibold">Difficulty:</span> {contest.difficulty}</div>
+      <p className={`mt-2 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{contest.description}</p>
+      <div className={`mt-4 space-y-2 text-sm ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+        <div><span className={`font-semibold ${isDark ? 'text-gray-100' : 'text-gray-900'}`}>Status:</span> {contest.status}</div>
+        <div><span className={`font-semibold ${isDark ? 'text-gray-100' : 'text-gray-900'}`}>Duration:</span> {contest.duration} mins</div>
+        <div><span className={`font-semibold ${isDark ? 'text-gray-100' : 'text-gray-900'}`}>Participants:</span> {contest.participants} / {contest.maxParticipants}</div>
+        <div><span className={`font-semibold ${isDark ? 'text-gray-100' : 'text-gray-900'}`}>Difficulty:</span> {contest.difficulty}</div>
       </div>
 
       {contest.status === 'ongoing' && contest.problemsList && contest.problemsList.length > 0 && (
@@ -217,7 +221,7 @@ function ContestLive() {
 
       <div className="mt-6">
         <button onClick={() => navigate('/problems')} className="px-4 py-2 bg-yellow-400 text-gray-950 rounded-lg mr-3">Go to Problems</button>
-        <button onClick={() => setShowContestLeaderboard(!showContestLeaderboard)} className="px-4 py-2 bg-blue-500 text-white rounded-lg">Leaderboard</button>
+        <button onClick={() => setShowContestLeaderboard(!showContestLeaderboard)} className={`px-4 py-2 rounded-lg ${isDark ? 'bg-blue-500 text-white' : 'bg-blue-600 text-white'}`}>Leaderboard</button>
       </div>
 
       {/* Contest Leaderboard Modal */}

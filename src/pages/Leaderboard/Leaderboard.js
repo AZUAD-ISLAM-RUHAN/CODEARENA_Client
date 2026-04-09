@@ -1,8 +1,12 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import NotificationDropdown from '../../components/NotificationDropdown';
+import ThemeToggle from '../../components/ThemeToggle';
+import { useTheme } from '../../context/ThemeContext';
+
 function Leaderboard() {
   const navigate = useNavigate();
+  const { isDark } = useTheme();
   const [activeTab, setActiveTab] = useState('global');
   const [globalUsers, setGlobalUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -67,18 +71,18 @@ function Leaderboard() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
-      <nav className="bg-gray-900 border-b border-gray-800 px-6 py-4 flex items-center justify-between">
+    <div className={`min-h-screen transition-colors duration-300 ${isDark ? 'bg-gray-950 text-white' : 'bg-white text-gray-900'}`}>
+      <nav className={`border-b px-6 py-4 flex items-center justify-between transition-colors duration-300 ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
         <h1 className="text-2xl font-bold cursor-pointer" onClick={() => navigate('/dashboard')}>
           Code<span className="text-yellow-400">Arena</span>
         </h1>
         <div className="flex items-center gap-4">
-          <button onClick={() => navigate('/dashboard')} className="text-gray-400 hover:text-white transition">Dashboard</button>
-          <button onClick={() => navigate('/problems')} className="text-gray-400 hover:text-white transition">Problems</button>
-          <button onClick={() => navigate('/battle')} className="text-gray-400 hover:text-white transition">Battle</button>
-          <button onClick={() => navigate('/contest')} className="text-gray-400 hover:text-white transition">Contests</button>
+          <button onClick={() => navigate('/dashboard')} className={`transition-colors ${isDark ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-gray-900'}`}>Dashboard</button>
+          <button onClick={() => navigate('/problems')} className={`transition-colors ${isDark ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-gray-900'}`}>Problems</button>
+          <button onClick={() => navigate('/battle')} className={`transition-colors ${isDark ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-gray-900'}`}>Battle</button>
+          <button onClick={() => navigate('/contest')} className={`transition-colors ${isDark ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-gray-900'}`}>Contests</button>
           
-          
+          <ThemeToggle />
           
           <NotificationDropdown />
           <div className="relative group">
