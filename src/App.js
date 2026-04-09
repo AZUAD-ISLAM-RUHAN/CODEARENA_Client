@@ -1,24 +1,48 @@
-import logo from './logo.svg';
-import './App.css';
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { ThemeProvider } from './context/ThemeContext';
+import LandingPage from './pages/Landing/LandingPage'; // ✅ NEW
+import Login from './pages/Auth/Login';
+import Register from './pages/Auth/Register';
+import AdminLogin from './pages/Auth/AdminLogin';
+import Dashboard from './pages/Dashboard/Dashboard';
+import Problems from './pages/Problems/Problems';
+import ProblemSolve from './pages/Problems/ProblemSolve';
+import Battle from './pages/Battle/Battle';
+import LiveBattle from './pages/Battle/LiveBattle';
+import Profile from './pages/Profile/Profile';
+import Leaderboard from './pages/Leaderboard/Leaderboard';
+import Admin from './pages/Admin/Admin';
+import Contest from './pages/Contest/Contest';
+import ContestLive from './pages/Contest/ContestLive';
 
 function App() {
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
+    <ThemeProvider>
+      <Router>
+        <Routes>
+          {/* ✅ Landing Page - Default Route */}
+          <Route path="/" element={<LandingPage />} />
+          
+          {/* Auth Routes */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/admin-login" element={<AdminLogin />} />
+          
+          {/* Main App Routes */}
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/problems" element={<Problems />} />
+          <Route path="/problem/:id" element={<ProblemSolve />} />
+          <Route path="/battle" element={<Battle />} />
+          <Route path="/battle/:battleId" element={<LiveBattle />} />
+          <Route path="/contest" element={<Contest />} />
+          <Route path="/contest/:contestId" element={<ContestLive />} />
+          <Route path="/profile" element={<Profile />} />
+          <Route path="/leaderboard" element={<Leaderboard />} />
+          <Route path="/admin" element={<Admin />} />
+        </Routes>
+      </Router>
+    </ThemeProvider>
   );
 }
 
