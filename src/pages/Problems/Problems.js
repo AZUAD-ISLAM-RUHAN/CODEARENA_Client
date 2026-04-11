@@ -21,6 +21,14 @@ function Problems() {
     status: [],
     topics: [],
   });
+  const [userStats, setUserStats] = useState({
+    solved: 0,
+    attempted: 0,
+    unsolved: 0,
+    totalSubmissions: 0,
+    totalProblems: 0
+  });
+
   const [user] = useState(() => {
     try {
       const currentUser = localStorage.getItem('currentUser');
@@ -33,6 +41,60 @@ function Problems() {
       return { username: 'User', photoUrl: null, solvedProblems: [], _id: null };
     }
   });
+
+  // Fetch user stats
+  useEffect(() => {
+    const fetchUserStats = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+
+        // Get user's solved problems count
+        const solvedCount = user.solvedProblems ? user.solvedProblems.length : 0;
+
+        // Get user's attempted problems count (from submission status)
+        let attemptedCount = 0;
+        let totalSubmissions = 0;
+        try {
+          const statusResponse = await fetch('http://localhost:5001/api/submissions/user/status', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const statusData = await statusResponse.json();
+          attemptedCount = Object.keys(statusData.problemStatus || {}).length;
+
+          // Get total submissions count
+          const submissionsResponse = await fetch(`http://localhost:5001/api/submissions/user/${user._id}?limit=1`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const submissionsData = await submissionsResponse.json();
+          totalSubmissions = submissionsData.total || 0;
+        } catch (error) {
+          console.error('Error fetching submission data:', error);
+        }
+
+        // Get total problems count
+        const totalResponse = await fetch('http://localhost:5001/api/problems?limit=1', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const totalData = await totalResponse.json();
+        const totalProblems = totalData.total || 0;
+
+        setUserStats({
+          solved: solvedCount,
+          attempted: attemptedCount,
+          unsolved: Math.max(totalProblems - solvedCount, 0), // Problems attempted but not solved
+          totalSubmissions: totalSubmissions,
+          totalProblems: totalProblems
+        });
+      } catch (error) {
+        console.error('Error fetching user stats:', error);
+      }
+    };
+
+    if (user._id) {
+      fetchUserStats();
+    }
+  }, [user._id, user.solvedProblems]);
 
   // Fetch problems from API
   useEffect(() => {
@@ -261,9 +323,9 @@ function Problems() {
         {/* Stats */}
         <motion.div variants={containerVariants} className="grid grid-cols-3 gap-4 mb-6">
           {[
-            { label: 'Solved', value: problems.filter(p => p.solved).length, color: 'text-green-400' },
-            { label: 'Unsolved', value: problems.filter(p => !p.solved && !p.attempted).length, color: 'text-yellow-400' },
-            { label: 'Attempt', value: problems.filter(p => p.attempted).length, color: 'text-purple-400' },
+            { label: 'Solved', value: userStats.solved, color: 'text-green-400' },
+            { label: 'Unsolved', value: userStats.unsolved, color: 'text-yellow-400' },
+            { label: 'Submission', value: userStats.totalSubmissions, color: 'text-purple-400' },
           ].map((stat, idx) => (
             <motion.div 
               key={idx}
@@ -348,9 +410,9 @@ function Problems() {
                         {problem.solved ? (
                           <span className="text-green-400 text-lg">✅</span>
                         ) : problem.attempted ? (
-                          <span className="text-yellow-400 text-lg animate-spin">⏳</span>
+                          <span className="text-yellow-400 text-lg">⏳</span>
                         ) : (
-                          <span className={isDark ? 'text-gray-600' : 'text-gray-400'}>⭕</span>
+                          <span className="text-red-400 text-lg">❌</span>
                         )}
                       </td>
                       <td className={`px-6 py-4 font-medium transition ${isDark ? 'text-white' : 'text-gray-900'}`}>{problem.title}</td>

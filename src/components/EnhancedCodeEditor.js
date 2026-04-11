@@ -43,34 +43,75 @@ export default function EnhancedCodeEditor({
   };
 
   const handleAskAi = async () => {
+    if (isAiLoading) return;
+
     setIsAiLoading(true);
     setShowAiPanel(true);
-    setAiResponse("Analyzing your code...");
+    setAiResponse('Analyzing your code and problem...');
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
+
     try {
-      // 127.0.0.1 ব্যবহার করা হয়েছে কানেক্টিভিটি নিশ্চিত করতে
-      const response = await fetch('http://127.0.0.1:5002/api/ai/analyze', {
+      const baseUrl = (process.env.REACT_APP_AI_SERVICE_URL || 'http://127.0.0.1:5002').replace(/\/$/, '');
+      const response = await fetch(`${baseUrl}/api/ai/analyze`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ 
-          code, 
+        signal: controller.signal,
+        body: JSON.stringify({
+          code: code || '',
           language,
-          problemTitle: problemTitle || "Coding Problem", 
-          description: description || "Analyze the logic." 
+          problemTitle: problemTitle || 'Coding Problem',
+          description: description || 'Give a problem-specific hint based on the current code.',
+          mode: 'hint',
+          askType: 'problem-specific-hint'
         })
       });
-      
-      const data = await response.json();
-      
-      if (data.status === "success") {
-        setAiResponse(data.hint);
+
+      const contentType = response.headers.get('content-type') || '';
+      let data;
+
+      if (contentType.includes('application/json')) {
+        data = await response.json();
       } else {
-        setAiResponse("AI was unable to analyze this code.");
+        const text = await response.text();
+        data = { message: text };
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          data?.message ||
+          data?.error ||
+          'AI service request failed.'
+        );
+      }
+
+      const hint =
+        data?.hint ||
+        data?.response ||
+        data?.analysis ||
+        data?.message ||
+        data?.result ||
+        data?.data?.hint ||
+        data?.data?.response;
+
+      if (hint) {
+        setAiResponse(hint);
+      } else {
+        setAiResponse('AI could not generate a useful hint for this problem right now.');
       }
     } catch (error) {
-      setAiResponse("Error: Could not connect to AI Service. Ensure Python app.py is running on port 5002.");
+      if (error.name === 'AbortError') {
+        setAiResponse('AI service took too long to respond. Please try again.');
+      } else {
+        setAiResponse(
+          error.message || 'Error: Could not connect to AI Service. Make sure the AI backend is running correctly.'
+        );
+      }
     } finally {
+      clearTimeout(timeoutId);
       setIsAiLoading(false);
     }
   };
@@ -121,10 +162,11 @@ export default function EnhancedCodeEditor({
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={handleAskAi}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-600 text-white font-medium hover:bg-purple-700 transition shadow-lg"
+            disabled={isAiLoading}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-600 text-white font-medium hover:bg-purple-700 transition shadow-lg disabled:opacity-70 disabled:cursor-not-allowed"
           >
-            <Sparkles size={18} className={isAiLoading ? "animate-pulse" : ""} />
-            <span>{isAiLoading ? "Analyzing..." : "Ask AI"}</span>
+            <Sparkles size={18} className={isAiLoading ? 'animate-pulse' : ''} />
+            <span>{isAiLoading ? 'Analyzing...' : 'Ask AI'}</span>
           </motion.button>
 
           <div className="w-[1px] h-6 bg-gray-300 dark:bg-gray-700 mx-1" />
@@ -188,8 +230,8 @@ export default function EnhancedCodeEditor({
                     <p className="text-sm">Analyzing code...</p>
                   </div>
                 ) : (
-                  <div className="bg-white dark:bg-gray-900 p-4 rounded-lg border border-purple-200 dark:border-purple-900/30 italic text-sm">
-                    "{aiResponse}"
+                  <div className="bg-white dark:bg-gray-900 p-4 rounded-lg border border-purple-200 dark:border-purple-900/30 text-sm whitespace-pre-wrap leading-6">
+                    {aiResponse}
                   </div>
                 )}
               </div>

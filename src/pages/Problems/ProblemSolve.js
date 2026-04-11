@@ -68,26 +68,65 @@ function ProblemSolve() {
   const handleRun = async () => {
     setIsRunning(true);
     setOutput(null);
-    
-    setTimeout(() => {
-      setOutput({
-        status: 'success',
-        testCases: [
-          { id: 1, input: '[2,7,11,15], 9', expected: '[0,1]', got: '[0,1]', status: 'passed' },
-          { id: 2, input: '[3,2,4], 6', expected: '[1,2]', got: '[1,2]', status: 'passed' },
-          { id: 3, input: '[3,3], 6', expected: '[0,1]', got: '[0,1]', status: 'passed' }
-        ],
-        runtime: '56 ms',
-        memory: '42.3 MB'
+
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setOutput({ status: 'error', message: 'Please login to run code' });
+        setIsRunning(false);
+        return;
+      }
+
+      const response = await fetch('http://localhost:5001/api/execute/run', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          code,
+          language,
+          problemId: problem._id
+        })
       });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        setOutput({
+          status: 'success',
+          testCases: data.results.map(result => ({
+            id: result.id,
+            input: result.input,
+            expected: result.expected,
+            got: result.actual,
+            status: result.status
+          })),
+          runtime: data.summary.executionTime,
+          memory: data.summary.memoryUsage,
+          passedCount: data.summary.passed,
+          totalCount: data.summary.total
+        });
+      } else {
+        setOutput({
+          status: 'error',
+          message: data.message || 'Code execution failed'
+        });
+      }
+    } catch (error) {
+      setOutput({
+        status: 'error',
+        message: 'Network error. Please try again.'
+      });
+    } finally {
       setIsRunning(false);
-    }, 1500);
+    }
   };
 
   const handleSubmit = async () => {
     setIsRunning(true);
     setOutput(null);
-    
+
     try {
       const token = localStorage.getItem('token');
       if (!token) {
@@ -96,8 +135,37 @@ function ProblemSolve() {
         return;
       }
 
-      const isAccepted = Math.random() > 0.3;
-      const response = await fetch('http://localhost:5001/api/submissions', {
+      // First, run the code to check all test cases
+      const runResponse = await fetch('http://localhost:5001/api/execute/run', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          code,
+          language,
+          problemId: problem._id
+        })
+      });
+
+      const runData = await runResponse.json();
+
+      if (!runResponse.ok || !runData.success) {
+        setOutput({
+          status: 'error',
+          message: runData.message || 'Code execution failed'
+        });
+        setIsRunning(false);
+        return;
+      }
+
+      // Check if all test cases passed
+      const allPassed = runData.results.every(result => result.status === 'passed');
+      const isAccepted = allPassed;
+
+      // Submit the solution
+      const submitResponse = await fetch('http://localhost:5001/api/submissions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -111,22 +179,22 @@ function ProblemSolve() {
         })
       });
 
-      const data = await response.json();
+      const submitData = await submitResponse.json();
 
-      if (response.ok) {
-        const xpChange = data.xpChange || 0;
-        
+      if (submitResponse.ok) {
+        const xpChange = submitData.xpChange || 0;
+
         if (xpChange !== 0) {
           setXpNotification({ xp: xpChange });
-          
-          if (data.userStats) {
-            const updatedUser = { ...user, ...data.userStats };
+
+          if (submitData.userStats) {
+            const updatedUser = { ...user, ...submitData.userStats };
             setUser(updatedUser);
             localStorage.setItem('currentUser', JSON.stringify(updatedUser));
           }
 
-          if (data.levelUp) {
-            setNewLevel(data.userStats.level);
+          if (submitData.levelUp) {
+            setNewLevel(submitData.userStats.level);
             setShowLevelUp(true);
           }
 
@@ -136,15 +204,22 @@ function ProblemSolve() {
         setOutput({
           status: isAccepted ? 'accepted' : 'failed',
           message: isAccepted ? '✅ All test cases passed!' : '❌ Some test cases failed',
-          runtime: '56 ms',
-          memory: '42.3 MB',
+          testCases: runData.results.map(result => ({
+            id: result.id,
+            input: result.input,
+            expected: result.expected,
+            got: result.actual,
+            status: result.status
+          })),
+          runtime: runData.summary.executionTime,
+          memory: runData.summary.memoryUsage,
           xpChange: xpChange,
-          newLevel: data.userStats?.level
+          newLevel: submitData.userStats?.level
         });
 
         if (isAccepted) setSubmitted(true);
       } else {
-        setOutput({ status: 'error', message: data.message || 'Submission failed' });
+        setOutput({ status: 'error', message: submitData.message || 'Submission failed' });
       }
     } catch (error) {
       setOutput({ status: 'error', message: 'Network error. Please try again.' });
@@ -294,19 +369,73 @@ function ProblemSolve() {
             <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className={`h-48 border-t shrink-0 ${isDark ? 'bg-gray-950 border-gray-800' : 'bg-gray-100 border-gray-200'} overflow-y-auto`}>
               <div className="px-4 py-2 border-b flex items-center justify-between sticky top-0 bg-inherit">
                 <span className="font-bold text-[10px] uppercase text-gray-500">Console</span>
-                <span className="text-[10px] text-gray-500">⏱️ {output.runtime} | 💾 {output.memory}</span>
+                {output.runtime && output.memory && (
+                  <span className="text-[10px] text-gray-500">⏱️ {output.runtime} | 💾 {output.memory}</span>
+                )}
               </div>
               <div className="p-4 text-xs">
                 {output.status === 'success' ? (
                   <div className="space-y-2">
                     {output.testCases.map(tc => (
-                      <div key={tc.id} className={`p-2 rounded bg-gray-900 border border-gray-800`}>
-                        <span className="text-green-400">✓ Test Case {tc.id} passed</span>
+                      <div key={tc.id} className={`p-2 rounded border ${tc.status === 'passed' ? 'bg-green-900/20 border-green-700 text-green-400' : 'bg-red-900/20 border-red-700 text-red-400'}`}>
+                        <div className="flex items-center justify-between">
+                          <span className={tc.status === 'passed' ? 'text-green-400' : 'text-red-400'}>
+                            {tc.status === 'passed' ? '✓' : '✗'} Test Case {tc.id}
+                          </span>
+                          <span className="text-gray-500">{tc.status}</span>
+                        </div>
+                        <div className="mt-1 text-[10px] text-gray-400">
+                          Input: {tc.input}
+                        </div>
+                        <div className="text-[10px] text-gray-400">
+                          Expected: {tc.expected} | Got: {tc.got}
+                        </div>
+                      </div>
+                    ))}
+                    <div className="mt-3 p-2 bg-blue-900/20 border border-blue-700 rounded">
+                      <span className="text-blue-400">
+                        Passed: {output.passedCount}/{output.totalCount} test cases
+                      </span>
+                    </div>
+                  </div>
+                ) : output.status === 'accepted' ? (
+                  <div className="space-y-2">
+                    <div className="text-green-400 font-bold">{output.message}</div>
+                    {output.testCases && output.testCases.map(tc => (
+                      <div key={tc.id} className="p-2 rounded bg-green-900/20 border border-green-700 text-green-400">
+                        <div className="flex items-center justify-between">
+                          <span>✓ Test Case {tc.id} passed</span>
+                          <span className="text-gray-500">passed</span>
+                        </div>
+                      </div>
+                    ))}
+                    {output.xpChange && output.xpChange > 0 && (
+                      <div className="text-yellow-400 font-bold">
+                        +{output.xpChange} XP earned!
+                      </div>
+                    )}
+                  </div>
+                ) : output.status === 'failed' ? (
+                  <div className="space-y-2">
+                    <div className="text-red-400 font-bold">{output.message}</div>
+                    {output.testCases && output.testCases.map(tc => (
+                      <div key={tc.id} className={`p-2 rounded border ${tc.status === 'passed' ? 'bg-green-900/20 border-green-700 text-green-400' : 'bg-red-900/20 border-red-700 text-red-400'}`}>
+                        <div className="flex items-center justify-between">
+                          <span className={tc.status === 'passed' ? 'text-green-400' : 'text-red-400'}>
+                            {tc.status === 'passed' ? '✓' : '✗'} Test Case {tc.id}
+                          </span>
+                          <span className="text-gray-500">{tc.status}</span>
+                        </div>
+                        {tc.status === 'failed' && (
+                          <div className="mt-1 text-[10px] text-gray-400">
+                            Expected: {tc.expected} | Got: {tc.got}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className={output.status === 'accepted' ? 'text-green-400' : 'text-red-400 font-bold'}>{output.message}</div>
+                  <div className="text-red-400 font-bold">{output.message}</div>
                 )}
               </div>
             </motion.div>

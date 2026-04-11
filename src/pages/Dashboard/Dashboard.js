@@ -206,6 +206,17 @@ function Dashboard() {
     navigate('/');
   };
 
+  // ✅ NEW: Go directly to the daily challenge problem
+  const handleDailyChallengeSolve = () => {
+    if (dailyChallenge?._id) {
+      navigate(`/problem/${dailyChallenge._id}`);
+    } else if (dailyChallenge?.id) {
+      navigate(`/problem/${dailyChallenge.id}`);
+    } else {
+      navigate('/problems');
+    }
+  };
+
   // Show loading state while fetching user data
   if (loading || dashboardLoading) {
     return (
@@ -348,7 +359,7 @@ function Dashboard() {
               </div>
             )}
             <motion.button 
-              onClick={() => navigate('/problems')}
+              onClick={handleDailyChallengeSolve}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               className="w-full bg-yellow-400 hover:bg-yellow-300 text-gray-950 font-bold py-3 rounded-lg transition"

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Editor from '@monaco-editor/react';
-import io from 'socket.io-client';
 import ThemeToggle from '../../components/ThemeToggle';
 import { useTheme } from '../../context/ThemeContext';
 
@@ -10,23 +9,32 @@ function LiveBattle() {
   const { battleId } = useParams();
   const { isDark } = useTheme();
   const editorRef = useRef(null);
-  const [socket, setSocket] = useState(null);
+  const profileFetchedRef = useRef(false);
 
   const [code, setCode] = useState(`// Battle Mode!\nfunction solution(arr, target) {\n  // Solve faster than your opponent!\n  return [];\n}`);
   const [language, setLanguage] = useState('javascript');
   const [output, setOutput] = useState(null);
   const [isRunning, setIsRunning] = useState(false);
   const [battleLoading, setBattleLoading] = useState(true);
+  const [battle, setBattle] = useState(null);
   const [problem, setProblem] = useState(null);
-  
-  // Battle states
-  const [timeLeft, setTimeLeft] = useState(1800); // 30 minutes
-  const [battleStatus, setBattleStatus] = useState('active'); // active, won, lost, draw
+  const [user, setUser] = useState(() => {
+    try {
+      const currentUser = localStorage.getItem('currentUser');
+      return currentUser ? JSON.parse(currentUser) : null;
+    } catch (error) {
+      console.error('Error parsing user:', error);
+      return null;
+    }
+  });
+
+  const [timeLeft, setTimeLeft] = useState(1800);
+  const [battleStatus, setBattleStatus] = useState('active');
   const [opponent, setOpponent] = useState({
     name: 'Opponent',
     avatar: 'O',
     progress: 0,
-    status: 'coding', // coding, submitted, won
+    status: 'coding',
     lastSubmission: null
   });
   const [myProgress, setMyProgress] = useState(0);
@@ -34,49 +42,7 @@ function LiveBattle() {
     { time: new Date().toLocaleTimeString(), message: 'Battle started!', type: 'info' }
   ]);
 
-  // Fetch random problem for the battle
-  useEffect(() => {
-    const fetchProblem = async () => {
-      try {
-        setBattleLoading(true);
-        const response = await fetch('http://localhost:5001/api/problems/random/battle?difficulty=Medium');
-        const data = await response.json();
-        
-        if (data.problem) {
-          setProblem({
-            id: data.problem._id,
-            title: data.problem.title,
-            difficulty: data.problem.difficulty,
-            description: data.problem.description,
-            examples: data.problem.examples || [],
-            constraints: data.problem.constraints || [],
-            category: data.problem.category
-          });
-          
-          // Add log message
-          setBattleLog(prev => [
-            ...prev,
-            { time: new Date().toLocaleTimeString(), message: `Problem loaded: ${data.problem.title}`, type: 'info' }
-          ]);
-        }
-      } catch (error) {
-        console.error('Error fetching battle problem:', error);
-        // Fallback to a sample problem
-        setProblem({
-          id: 'sample',
-          title: 'Sample Problem',
-          difficulty: 'Medium',
-          description: 'Solve this problem to win the battle!',
-          examples: [],
-          constraints: []
-        });
-      } finally {
-        setBattleLoading(false);
-      }
-    };
-
-    fetchProblem();
-  }, [battleId]);
+  const currentUserId = user?._id || user?.id;
 
   const languages = [
     { value: 'javascript', label: 'JavaScript', icon: '🟨' },
@@ -85,8 +51,191 @@ function LiveBattle() {
     { value: 'java', label: 'Java', icon: '☕' }
   ];
 
-  // Timer effect
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  function handleEditorDidMount(editor) {
+    editorRef.current = editor;
+  }
+
+  const handleLeaveBattle = async () => {
+    if (battleStatus !== 'active') {
+      navigate('/battle');
+      return;
+    }
+
+    const confirmLeave = window.confirm(
+      'Are you sure you want to end this battle? You will lose the battle.'
+    );
+
+    if (!confirmLeave) return;
+
+    try {
+      const token = localStorage.getItem('token');
+
+      if (!token) {
+        navigate('/login');
+        return;
+      }
+
+      const response = await fetch(`http://localhost:5001/api/battles/${battleId}/end`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to end battle');
+      }
+
+      setBattleStatus('lost');
+      navigate('/battle');
+    } catch (error) {
+      console.error('Error ending battle:', error);
+      alert(error.message || 'Failed to end battle. Please try again.');
+    }
+  };
+
+  const fetchBattle = async (showLoader = true) => {
+    try {
+      if (showLoader) {
+        setBattleLoading(true);
+      }
+
+      const token = localStorage.getItem('token');
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+      let resolvedUser = user;
+
+      if (token && !profileFetchedRef.current) {
+        const profileResp = await fetch('http://localhost:5001/api/auth/profile', {
+          headers
+        });
+        const profileData = await profileResp.json();
+
+        if (profileResp.ok && profileData.user) {
+          resolvedUser = profileData.user;
+          setUser(profileData.user);
+          localStorage.setItem('currentUser', JSON.stringify(profileData.user));
+          profileFetchedRef.current = true;
+        }
+      }
+
+      const resolvedUserId = resolvedUser?._id || resolvedUser?.id;
+
+      const response = await fetch(`http://localhost:5001/api/battles/${battleId}`, {
+        headers
+      });
+      const data = await response.json();
+
+      if (!response.ok || !data.battle) {
+        throw new Error(data.message || 'Battle not found');
+      }
+
+      const nextBattle = data.battle;
+      const fetchedProblem = nextBattle.problem;
+
+      setBattle(nextBattle);
+
+      setProblem((prev) => {
+        if (
+          prev &&
+          fetchedProblem &&
+          String(prev._id || prev.id) === String(fetchedProblem._id || fetchedProblem.id)
+        ) {
+          return prev;
+        }
+        return fetchedProblem;
+      });
+
+      const battleTime = (nextBattle.timeLimit || 30) * 60;
+      setTimeLeft((prev) => (showLoader ? battleTime : prev));
+
+      if (nextBattle.status === 'completed') {
+        const winnerId =
+          typeof nextBattle.winner === 'object' && nextBattle.winner !== null
+            ? nextBattle.winner._id
+            : nextBattle.winner;
+
+        setBattleStatus(String(winnerId) === String(resolvedUserId) ? 'won' : 'lost');
+      } else {
+        setBattleStatus('active');
+      }
+
+      const participants = nextBattle.participants || [];
+      const otherParticipant = participants.find((p) => {
+        const participantId =
+          typeof p.userId === 'object' && p.userId !== null ? p.userId._id : p.userId;
+        return String(participantId) !== String(resolvedUserId);
+      });
+
+      setOpponent({
+        name:
+          otherParticipant?.userId?.username ||
+          otherParticipant?.username ||
+          'Waiting for Opponent',
+        avatar:
+          (otherParticipant?.userId?.username || otherParticipant?.username || 'O')
+            .charAt(0)
+            .toUpperCase(),
+        progress:
+          otherParticipant?.status === 'winner'
+            ? 100
+            : otherParticipant?.status === 'submitted'
+              ? 70
+              : 0,
+        status: otherParticipant?.status || 'coding',
+        lastSubmission: otherParticipant?.submittedAt || null
+      });
+
+      if (showLoader) {
+        setBattleLog((prev) => [
+          ...prev,
+          {
+            time: new Date().toLocaleTimeString(),
+            message: `Problem loaded: ${fetchedProblem.title}`,
+            type: 'info'
+          }
+        ]);
+      }
+    } catch (error) {
+      console.error('Error fetching battle:', error);
+
+      if (showLoader) {
+        setBattle(null);
+        setProblem(null);
+      }
+    } finally {
+      if (showLoader) {
+        setBattleLoading(false);
+      }
+    }
+  };
+
   useEffect(() => {
+    fetchBattle(true);
+  }, [battleId]);
+
+  useEffect(() => {
+    if (!battleId || battleStatus !== 'active') return;
+
+    const interval = setInterval(() => {
+      fetchBattle(false);
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [battleId, battleStatus]);
+
+  useEffect(() => {
+    if (battleStatus !== 'active') return;
+
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
@@ -96,108 +245,367 @@ function LiveBattle() {
         return prev - 1;
       });
     }, 1000);
+
     return () => clearInterval(timer);
-  }, []);
+  }, [battleStatus, battleId]);
 
-  // Simulate opponent progress
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setOpponent((prev) => ({
-        ...prev,
-        progress: Math.min(prev.progress + Math.random() * 5, 100)
-      }));
-    }, 5000);
-    return () => clearInterval(interval);
-  }, []);
+  const handleRematch = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        navigate('/login');
+        return;
+      }
 
-  const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
+      const otherParticipant = (battle?.participants || []).find((p) => {
+        const participantId =
+          typeof p.userId === 'object' && p.userId !== null ? p.userId._id : p.userId;
+        return String(participantId) !== String(currentUserId);
+      });
 
-  function handleEditorDidMount(editor, monaco) {
-    editorRef.current = editor;
-  }
+      const response = await fetch('http://localhost:5001/api/battles/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          opponentUsername: otherParticipant?.userId?.username || otherParticipant?.username || undefined,
+          isRanked: battle?.isRanked || false,
+          difficulty: battle?.problem?.difficulty || 'Medium',
+          timeLimit: battle?.timeLimit || 15
+        })
+      });
 
-  const handleLeaveBattle = () => {
-    navigate('/battle');
-  };
+      const data = await response.json();
 
-  const handleRematch = () => {
-    const newBattleId = Math.random().toString(36).substring(7);
-    navigate(`/battle/${newBattleId}`);
-    setBattleStatus('active');
-    setOutput(null);
-    setBattleLog([{ time: new Date().toLocaleTimeString(), message: 'Battle restarted!', type: 'info' }]);
-    setMyProgress(0);
-    setOpponent((prev) => ({ ...prev, progress: 0, status: 'coding' }));
+      if (!response.ok || !data.battle?._id) {
+        return;
+      }
+
+      navigate(`/battle/${data.battle._id}`);
+      window.location.reload();
+    } catch (error) {
+      console.error('Rematch error:', error);
+    }
   };
 
   const handleRun = async () => {
     setIsRunning(true);
-    setMyProgress((prev) => Math.min(prev + 20, 80));
-    
-    setTimeout(() => {
-      setOutput({
-        status: 'success',
-        testCases: [
-          { id: 1, status: 'passed' },
-          { id: 2, status: 'passed' },
-          { id: 3, status: 'failed', error: 'Time Limit Exceeded' }
-        ],
-        passed: 2,
-        total: 3
+    setOutput(null);
+
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setOutput({ status: 'error', message: 'Please login to run code' });
+        setIsRunning(false);
+        return;
+      }
+
+      const response = await fetch('http://localhost:5001/api/execute/run', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          code,
+          language,
+          problemId: problem._id
+        })
       });
-      setBattleLog((prev) => [...prev, { 
-        time: new Date().toLocaleTimeString('en-US', {hour12: false, hour: '2-digit', minute:'2-digit'}), 
-        message: 'You passed 2/3 test cases', 
-        type: 'success' 
-      }]);
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        const passed = data.summary.passed || 0;
+        const total = data.summary.total || 0;
+        const progress = total > 0 ? Math.round((passed / total) * 100) : 0;
+
+        setMyProgress(progress);
+
+        setOutput({
+          status: 'success',
+          testCases: data.results.map((result) => ({
+            id: result.id,
+            input: result.input,
+            expected: result.expected,
+            got: result.actual,
+            status: result.status
+          })),
+          runtime: data.summary.executionTime,
+          memory: data.summary.memoryUsage,
+          passedCount: data.summary.passed,
+          totalCount: data.summary.total
+        });
+
+        setBattleLog((prev) => [
+          ...prev,
+          {
+            time: new Date().toLocaleTimeString(),
+            message: `You passed ${passed}/${total} test cases`,
+            type: passed === total ? 'success' : 'info'
+          }
+        ]);
+      } else {
+        setOutput({
+          status: 'error',
+          message: data.message || 'Code execution failed'
+        });
+      }
+    } catch (error) {
+      setOutput({
+        status: 'error',
+        message: 'Network error. Please try again.'
+      });
+    } finally {
       setIsRunning(false);
-    }, 1500);
+    }
   };
 
   const handleSubmit = async () => {
     setIsRunning(true);
-    
-    setTimeout(() => {
-      const won = Math.random() > 0.3; // Simulate win/loss
-      setBattleStatus(won ? 'won' : 'lost');
-      setOutput({
-        status: won ? 'accepted' : 'wrong',
-        message: won ? '🎉 You won the battle!' : '❌ Wrong answer on test case 5'
+    setOutput(null);
+
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setOutput({ status: 'error', message: 'Please login to submit' });
+        setIsRunning(false);
+        return;
+      }
+
+      const runResponse = await fetch('http://localhost:5001/api/execute/run', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          code,
+          language,
+          problemId: problem._id
+        })
       });
-      setBattleLog((prev) => [...prev, { 
-        time: new Date().toLocaleTimeString('en-US', {hour12: false, hour: '2-digit', minute:'2-digit'}), 
-        message: won ? 'You submitted the correct solution!' : 'Submission failed', 
-        type: won ? 'success' : 'error' 
-      }]);
+
+      const runData = await runResponse.json();
+
+      if (!runResponse.ok || !runData.success) {
+        setOutput({
+          status: 'error',
+          message: runData.message || 'Code execution failed'
+        });
+        setIsRunning(false);
+        return;
+      }
+
+      const allPassed = runData.results.every((result) => result.status === 'passed');
+      const isAccepted = allPassed;
+
+      const submitResponse = await fetch('http://localhost:5001/api/submissions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          problemId: problem._id,
+          code,
+          language,
+          isAccepted
+        })
+      });
+
+      const submitData = await submitResponse.json();
+
+      if (!submitResponse.ok) {
+        setOutput({
+          status: 'error',
+          message: submitData.message || 'Submission failed'
+        });
+        setIsRunning(false);
+        return;
+      }
+
+      const battleSubmitResponse = await fetch(`http://localhost:5001/api/battles/${battleId}/submit`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          isAccepted,
+          submissionId: submitData.submission?.id || null,
+          executionTime: runData.summary?.executionTime || null
+        })
+      });
+
+      const battleSubmitData = await battleSubmitResponse.json();
+
+      if (battleSubmitResponse.ok && battleSubmitData.battle) {
+        setBattle(battleSubmitData.battle);
+
+        const winnerId =
+          typeof battleSubmitData.battle.winner === 'object' && battleSubmitData.battle.winner !== null
+            ? battleSubmitData.battle.winner._id
+            : battleSubmitData.battle.winner;
+
+        if (battleSubmitData.battle.status === 'completed') {
+          setBattleStatus(String(winnerId) === String(currentUserId) ? 'won' : 'lost');
+        }
+
+        const participants = battleSubmitData.battle.participants || [];
+        const otherParticipant = participants.find((p) => {
+          const participantId =
+            typeof p.userId === 'object' && p.userId !== null ? p.userId._id : p.userId;
+          return String(participantId) !== String(currentUserId);
+        });
+
+        setOpponent({
+          name:
+            otherParticipant?.userId?.username ||
+            otherParticipant?.username ||
+            'Waiting for Opponent',
+          avatar:
+            (otherParticipant?.userId?.username || otherParticipant?.username || 'O')
+              .charAt(0)
+              .toUpperCase(),
+          progress:
+            otherParticipant?.status === 'winner'
+              ? 100
+              : otherParticipant?.status === 'submitted'
+                ? 70
+                : 0,
+          status: otherParticipant?.status || 'coding',
+          lastSubmission: otherParticipant?.submittedAt || null
+        });
+      }
+
+      if (submitData.userStats) {
+        const updatedUser = { ...user, ...submitData.userStats };
+        setUser(updatedUser);
+        localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+      }
+
+      setMyProgress(isAccepted ? 100 : Math.max(myProgress, 70));
+
+      setOutput({
+        status: isAccepted ? 'accepted' : 'failed',
+        message: isAccepted ? '✅ All test cases passed!' : '❌ Some test cases failed',
+        testCases: runData.results.map((result) => ({
+          id: result.id,
+          input: result.input,
+          expected: result.expected,
+          got: result.actual,
+          status: result.status
+        })),
+        runtime: runData.summary.executionTime,
+        memory: runData.summary.memoryUsage,
+        xpChange: submitData.xpChange,
+        newLevel: submitData.userStats?.level
+      });
+
+      setBattleLog((prev) => [
+        ...prev,
+        {
+          time: new Date().toLocaleTimeString(),
+          message: isAccepted ? 'You submitted the correct solution!' : 'Submission failed',
+          type: isAccepted ? 'success' : 'error'
+        }
+      ]);
+    } catch (error) {
+      setOutput({
+        status: 'error',
+        message: 'Network error. Please try again.'
+      });
+    } finally {
       setIsRunning(false);
-    }, 2000);
+    }
   };
 
   const getStatusColor = (status) => {
-    switch(status) {
-      case 'coding': return 'text-yellow-400';
-      case 'submitted': return 'text-blue-400';
-      case 'won': return 'text-green-400';
-      default: return 'text-gray-400';
+    switch (status) {
+      case 'coding':
+        return 'text-yellow-400';
+      case 'submitted':
+        return 'text-blue-400';
+      case 'winner':
+      case 'won':
+        return 'text-green-400';
+      case 'loser':
+        return 'text-red-400';
+      default:
+        return 'text-gray-400';
     }
   };
 
   const getStatusText = (status) => {
-    switch(status) {
-      case 'coding': return '💻 Coding...';
-      case 'submitted': return '⏳ Submitted';
-      case 'won': return '✅ Solved!';
-      default: return '';
+    switch (status) {
+      case 'coding':
+        return '💻 Coding...';
+      case 'submitted':
+        return '⏳ Submitted';
+      case 'winner':
+      case 'won':
+        return '✅ Solved!';
+      case 'loser':
+        return '❌ Lost';
+      default:
+        return '';
     }
   };
 
+  if (battleLoading || !problem) {
+    return (
+      <div className={`min-h-screen flex flex-col transition-colors duration-300 ${isDark ? 'bg-gray-950 text-white' : 'bg-white text-gray-900'}`}>
+        <nav className={`border-b px-6 py-3 flex items-center justify-between transition-colors duration-300 ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
+          <div className="flex items-center gap-4">
+            <h1 className="text-xl font-bold cursor-pointer" onClick={() => navigate('/dashboard')}>
+              Code<span className="text-yellow-400">Arena</span>
+            </h1>
+            <span className={isDark ? 'text-gray-600' : 'text-gray-400'}>|</span>
+            <span className="text-red-400 font-bold animate-pulse">● LIVE BATTLE</span>
+          </div>
+          <div className="flex items-center gap-6">
+            <div className="text-2xl font-mono font-bold text-yellow-400">
+              ⏱️ {formatTime(timeLeft)}
+            </div>
+            <ThemeToggle />
+            <button
+              type="button"
+              onClick={handleLeaveBattle}
+              className={`transition-colors text-sm ${isDark ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-gray-900'}`}
+            >
+              Leave Battle
+            </button>
+          </div>
+        </nav>
+
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-yellow-400 mx-auto mb-4"></div>
+            <p className={isDark ? 'text-gray-400' : 'text-gray-600'}>Loading battle...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const examples =
+    problem.examples && problem.examples.length > 0
+      ? problem.examples
+      : (
+          problem.sampleInput || problem.sampleOutput
+            ? [{ input: problem.sampleInput || '', output: problem.sampleOutput || '' }]
+            : []
+        );
+
+  const constraints = Array.isArray(problem.constraints)
+    ? problem.constraints
+    : (problem.constraints ? String(problem.constraints).split('\n') : []);
+
   return (
     <div className={`min-h-screen flex flex-col transition-colors duration-300 ${isDark ? 'bg-gray-950 text-white' : 'bg-white text-gray-900'}`}>
-      {/* Navbar */}
       <nav className={`border-b px-6 py-3 flex items-center justify-between transition-colors duration-300 ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
         <div className="flex items-center gap-4">
           <h1 className="text-xl font-bold cursor-pointer" onClick={() => navigate('/dashboard')}>
@@ -206,14 +614,13 @@ function LiveBattle() {
           <span className={isDark ? 'text-gray-600' : 'text-gray-400'}>|</span>
           <span className="text-red-400 font-bold animate-pulse">● LIVE BATTLE</span>
         </div>
-        
-        {/* Timer */}
+
         <div className="flex items-center gap-6">
           <div className={`text-2xl font-mono font-bold ${timeLeft < 300 ? 'text-red-400 animate-pulse' : 'text-yellow-400'}`}>
             ⏱️ {formatTime(timeLeft)}
           </div>
           <ThemeToggle />
-          <button 
+          <button
             type="button"
             onClick={handleLeaveBattle}
             className={`transition-colors text-sm ${isDark ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-gray-900'}`}
@@ -223,7 +630,6 @@ function LiveBattle() {
         </div>
       </nav>
 
-      {/* Battle Result Overlay */}
       {battleStatus !== 'active' && (
         <div className={`fixed inset-0 flex items-center justify-center z-50 ${isDark ? 'bg-black/80' : 'bg-black/60'}`}>
           <div className={`border-2 border-yellow-400 rounded-2xl p-8 text-center max-w-md ${isDark ? 'bg-gray-900' : 'bg-white'}`}>
@@ -234,17 +640,17 @@ function LiveBattle() {
               {battleStatus === 'won' ? 'Victory!' : battleStatus === 'lost' ? 'Defeat!' : 'Draw!'}
             </h2>
             <p className={`mb-6 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-              {battleStatus === 'won' ? 'You solved it first! +50 XP' : battleStatus === 'lost' ? 'Opponent was faster! -10 XP' : 'Both solved at the same time!'}
+              {battleStatus === 'won' ? 'You solved it first!' : battleStatus === 'lost' ? 'Opponent was faster!' : 'Battle ended.'}
             </p>
             <div className="flex gap-3 justify-center">
-              <button 
+              <button
                 type="button"
                 onClick={handleLeaveBattle}
                 className={`font-semibold px-6 py-3 rounded-lg transition ${isDark ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-900'}`}
               >
                 Back to Lobby
               </button>
-              <button 
+              <button
                 type="button"
                 onClick={handleRematch}
                 className="bg-yellow-400 hover:bg-yellow-300 text-gray-950 font-semibold px-6 py-3 rounded-lg transition"
@@ -256,9 +662,7 @@ function LiveBattle() {
         </div>
       )}
 
-      {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Panel - Problem */}
         <div className={`w-1/4 overflow-y-auto ${isDark ? 'border-r border-gray-800 bg-gray-900' : 'border-r border-gray-200 bg-gray-50'}`}>
           <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-gray-200'}`}>
             <h2 className={`font-bold text-lg mb-1 ${isDark ? 'text-white' : 'text-gray-900'}`}>{problem.title}</h2>
@@ -270,19 +674,29 @@ function LiveBattle() {
             <p className={`text-sm leading-relaxed ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
               {problem.description}
             </p>
-            {problem.examples.map((ex, idx) => (
+
+            {examples.map((ex, idx) => (
               <div key={idx} className={`rounded p-3 text-xs ${isDark ? 'bg-gray-950' : 'bg-gray-100'}`}>
                 <div className={`mb-1 ${isDark ? 'text-gray-500' : 'text-gray-600'}`}>Example {idx + 1}:</div>
                 <div className="text-green-400">Input: {ex.input}</div>
                 <div className="text-yellow-400">Output: {ex.output}</div>
               </div>
             ))}
+
+            {constraints.length > 0 && (
+              <div>
+                <h3 className={`text-sm font-semibold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>Constraints</h3>
+                <ul className={`list-disc list-inside space-y-1 text-xs ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                  {constraints.map((item, index) => (
+                    <li key={index}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Middle Panel - Code Editor */}
         <div className={`w-1/2 flex flex-col ${isDark ? 'bg-gray-900' : 'bg-white'}`}>
-          {/* Editor Header */}
           <div className={`flex items-center justify-between px-4 py-3 border-b ${isDark ? 'border-gray-800' : 'border-gray-200'}`}>
             <select
               value={language}
@@ -315,13 +729,12 @@ function LiveBattle() {
             </div>
           </div>
 
-          {/* Monaco Editor */}
           <div className="flex-1">
             <Editor
               height="100%"
               language={language}
               value={code}
-              onChange={setCode}
+              onChange={(value) => setCode(value || '')}
               onMount={handleEditorDidMount}
               theme="vs-dark"
               options={{
@@ -335,28 +748,32 @@ function LiveBattle() {
             />
           </div>
 
-          {/* Output Console */}
           {output && (
-            <div className={`h-40 overflow-y-auto ${isDark ? 'border-t border-gray-800 bg-gray-950' : 'border-t border-gray-200 bg-gray-50'}`}>
+            <div className={`h-48 overflow-y-auto ${isDark ? 'border-t border-gray-800 bg-gray-950' : 'border-t border-gray-200 bg-gray-50'}`}>
               <div className={`px-4 py-2 border-b font-semibold text-sm flex items-center justify-between ${isDark ? 'border-gray-800' : 'border-gray-200'}`}>
                 <span>Output</span>
-                {output.passed !== undefined && (
-                  <span className={output.passed === output.total ? 'text-green-400' : 'text-yellow-400'}>
-                    {output.passed}/{output.total} passed
+                {output.passedCount !== undefined && output.totalCount !== undefined && (
+                  <span className={output.passedCount === output.totalCount ? 'text-green-400' : 'text-yellow-400'}>
+                    {output.passedCount}/{output.totalCount} passed
                   </span>
                 )}
               </div>
-              <div className="p-4">
+              <div className="p-4 text-xs">
                 {output.testCases ? (
-                  <div className="flex gap-2">
+                  <div className="space-y-2">
                     {output.testCases.map((tc) => (
-                      <div 
+                      <div
                         key={tc.id}
-                        className={`w-8 h-8 rounded flex items-center justify-center text-xs font-bold ${
-                          tc.status === 'passed' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
-                        }`}
+                        className={`p-2 rounded border ${tc.status === 'passed' ? 'bg-green-900/20 border-green-700 text-green-400' : 'bg-red-900/20 border-red-700 text-red-400'}`}
                       >
-                        {tc.status === 'passed' ? '✓' : '✗'}
+                        <div className="flex items-center justify-between">
+                          <span className={tc.status === 'passed' ? 'text-green-400' : 'text-red-400'}>
+                            {tc.status === 'passed' ? '✓' : '✗'} Test Case {tc.id}
+                          </span>
+                          <span className="text-gray-500">{tc.status}</span>
+                        </div>
+                        <div className="mt-1 text-[10px] text-gray-400">Input: {tc.input}</div>
+                        <div className="text-[10px] text-gray-400">Expected: {tc.expected} | Got: {tc.got}</div>
                       </div>
                     ))}
                   </div>
@@ -370,9 +787,7 @@ function LiveBattle() {
           )}
         </div>
 
-        {/* Right Panel - Battle Info */}
         <div className={`w-1/4 flex flex-col ${isDark ? 'border-l border-gray-800 bg-gray-900' : 'border-l border-gray-200 bg-gray-50'}`}>
-          {/* Opponent Card */}
           <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-gray-200'}`}>
             <h3 className={`text-sm font-semibold mb-3 uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Opponent</h3>
             <div className="flex items-center gap-3 mb-3">
@@ -386,15 +801,14 @@ function LiveBattle() {
                 </div>
               </div>
             </div>
-            
-            {/* Opponent Progress */}
+
             <div className="mb-2">
               <div className="flex justify-between text-xs mb-1">
                 <span className={isDark ? 'text-gray-400' : 'text-gray-600'}>Progress</span>
                 <span className="text-red-400">{Math.round(opponent.progress)}%</span>
               </div>
               <div className={`h-2 rounded-full overflow-hidden ${isDark ? 'bg-gray-800' : 'bg-gray-200'}`}>
-                <div 
+                <div
                   className="h-full bg-red-500 transition-all duration-500"
                   style={{ width: `${opponent.progress}%` }}
                 />
@@ -402,7 +816,6 @@ function LiveBattle() {
             </div>
           </div>
 
-          {/* Your Progress */}
           <div className={`p-4 border-b ${isDark ? 'border-gray-800' : 'border-gray-200'}`}>
             <h3 className={`text-sm font-semibold mb-3 uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Your Progress</h3>
             <div className="mb-2">
@@ -411,7 +824,7 @@ function LiveBattle() {
                 <span className="text-green-400">{Math.round(myProgress)}%</span>
               </div>
               <div className={`h-2 rounded-full overflow-hidden ${isDark ? 'bg-gray-800' : 'bg-gray-200'}`}>
-                <div 
+                <div
                   className="h-full bg-green-500 transition-all duration-500"
                   style={{ width: `${myProgress}%` }}
                 />
@@ -419,18 +832,23 @@ function LiveBattle() {
             </div>
           </div>
 
-          {/* Battle Log */}
           <div className="flex-1 overflow-y-auto p-4">
             <h3 className={`text-sm font-semibold mb-3 uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Battle Log</h3>
             <div className="space-y-2">
               {battleLog.map((log, idx) => (
                 <div key={idx} className="text-xs">
                   <span className={isDark ? 'text-gray-500' : 'text-gray-400'}>[{log.time}]</span>{' '}
-                  <span className={
-                    log.type === 'success' ? 'text-green-400' : 
-                    log.type === 'error' ? 'text-red-400' : 
-                    log.type === 'opponent' ? 'text-red-300' : 'text-gray-300'
-                  }>
+                  <span
+                    className={
+                      log.type === 'success'
+                        ? 'text-green-400'
+                        : log.type === 'error'
+                          ? 'text-red-400'
+                          : log.type === 'opponent'
+                            ? 'text-red-300'
+                            : 'text-gray-300'
+                    }
+                  >
                     {log.message}
                   </span>
                 </div>
@@ -438,16 +856,15 @@ function LiveBattle() {
             </div>
           </div>
 
-          {/* Quick Stats */}
           <div className="p-4 border-t border-gray-800 bg-gray-950">
             <div className="grid grid-cols-2 gap-4 text-center">
               <div>
-                <div className="text-lg font-bold text-yellow-400">2</div>
+                <div className="text-lg font-bold text-yellow-400">{output?.passedCount || 0}</div>
                 <div className="text-xs text-gray-500">Tests Passed</div>
               </div>
               <div>
-                <div className="text-lg font-bold text-blue-400">3</div>
-                <div className="text-xs text-gray-500">Submissions</div>
+                <div className="text-lg font-bold text-blue-400">{output?.totalCount || 0}</div>
+                <div className="text-xs text-gray-500">Total Tests</div>
               </div>
             </div>
           </div>

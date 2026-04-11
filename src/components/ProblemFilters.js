@@ -23,13 +23,15 @@ export default function ProblemFilters({ onFilterChange }) {
     ],
     topics: [
       { id: 'array', label: 'Array', icon: '📊' },
-      { id: 'dp', label: 'DP', icon: '📈' },
+      { id: 'string', label: 'String', icon: '📝' },
+      { id: 'dynamicprogramming', label: 'Dynamic Programming', icon: '📈' },
       { id: 'graph', label: 'Graph', icon: '🔗' },
-      { id: 'linkedlist', label: 'Linked List', icon: '⛓️' },
-      { id: 'stack', label: 'Stack', icon: '📚' },
       { id: 'tree', label: 'Tree', icon: '🌳' },
-      { id: 'greedy', label: 'Greedy', icon: '🎯' },
+      { id: 'math', label: 'Math', icon: '🔢' },
       { id: 'sorting', label: 'Sorting', icon: '🔀' },
+      { id: 'searching', label: 'Searching', icon: '🔍' },
+      { id: 'greedy', label: 'Greedy', icon: '🎯' },
+      { id: 'backtracking', label: 'Backtracking', icon: '🔙' },
     ],
   };
 
