@@ -317,42 +317,61 @@ function LiveBattle() {
 
       const data = await response.json();
 
-      if (response.ok && data.success) {
-        const passed = data.summary.passed || 0;
-        const total = data.summary.total || 0;
-        const progress = total > 0 ? Math.round((passed / total) * 100) : 0;
-
-        setMyProgress(progress);
-
-        setOutput({
-          status: 'success',
-          testCases: data.results.map((result) => ({
-            id: result.id,
-            input: result.input,
-            expected: result.expected,
-            got: result.actual,
-            status: result.status
-          })),
-          runtime: data.summary.executionTime,
-          memory: data.summary.memoryUsage,
-          passedCount: data.summary.passed,
-          totalCount: data.summary.total
-        });
-
-        setBattleLog((prev) => [
-          ...prev,
-          {
-            time: new Date().toLocaleTimeString(),
-            message: `You passed ${passed}/${total} test cases`,
-            type: passed === total ? 'success' : 'info'
-          }
-        ]);
-      } else {
+      if (!response.ok) {
         setOutput({
           status: 'error',
           message: data.message || 'Code execution failed'
         });
+        return;
       }
+
+      const passed = data.summary?.passed || 0;
+      const total = data.summary?.total || 0;
+      const progress = total > 0 ? Math.round((passed / total) * 100) : 0;
+      const verdict = data.summary?.verdict || 'Unknown';
+
+      setMyProgress(progress);
+
+      setOutput({
+        status: verdict === 'Accepted' ? 'success' : 'failed',
+        verdict,
+        testCases: (data.results || []).map((result) => ({
+          id: result.id,
+          input: result.input,
+          expected: result.expected,
+          got: result.actual,
+          status: result.status,
+          error: result.error || null
+        })),
+        runtime: data.summary?.executionTime,
+        memory: data.summary?.memoryUsage,
+        passedCount: passed,
+        totalCount: total,
+        message:
+          verdict === 'Accepted'
+            ? '✅ All test cases passed!'
+            : verdict === 'Wrong Answer'
+              ? '❌ Wrong Answer'
+              : verdict === 'Compilation Error'
+                ? '⚠️ Compilation Error'
+                : verdict === 'Runtime Error'
+                  ? '💥 Runtime Error'
+                  : verdict === 'Time Limit Exceeded'
+                    ? '⏱️ Time Limit Exceeded'
+                    : 'Run completed'
+      });
+
+      setBattleLog((prev) => [
+        ...prev,
+        {
+          time: new Date().toLocaleTimeString(),
+          message:
+            verdict === 'Accepted'
+              ? `You passed ${passed}/${total} test cases`
+              : `Run result: ${verdict} (${passed}/${total})`,
+          type: verdict === 'Accepted' ? 'success' : 'info'
+        }
+      ]);
     } catch (error) {
       setOutput({
         status: 'error',
@@ -390,7 +409,7 @@ function LiveBattle() {
 
       const runData = await runResponse.json();
 
-      if (!runResponse.ok || !runData.success) {
+      if (!runResponse.ok) {
         setOutput({
           status: 'error',
           message: runData.message || 'Code execution failed'
@@ -399,7 +418,8 @@ function LiveBattle() {
         return;
       }
 
-      const allPassed = runData.results.every((result) => result.status === 'passed');
+      const verdict = runData.summary?.verdict || 'Unknown';
+      const allPassed = verdict === 'Accepted';
       const isAccepted = allPassed;
 
       const submitResponse = await fetch('http://localhost:5001/api/submissions', {
@@ -487,20 +507,39 @@ function LiveBattle() {
         localStorage.setItem('currentUser', JSON.stringify(updatedUser));
       }
 
-      setMyProgress(isAccepted ? 100 : Math.max(myProgress, 70));
+      const passed = runData.summary?.passed || 0;
+      const total = runData.summary?.total || 0;
+      const progress = total > 0 ? Math.round((passed / total) * 100) : 0;
+
+      setMyProgress(progress);
 
       setOutput({
         status: isAccepted ? 'accepted' : 'failed',
-        message: isAccepted ? '✅ All test cases passed!' : '❌ Some test cases failed',
-        testCases: runData.results.map((result) => ({
+        verdict,
+        message:
+          verdict === 'Accepted'
+            ? '✅ All test cases passed!'
+            : verdict === 'Wrong Answer'
+              ? '❌ Wrong Answer'
+              : verdict === 'Compilation Error'
+                ? '⚠️ Compilation Error'
+                : verdict === 'Runtime Error'
+                  ? '💥 Runtime Error'
+                  : verdict === 'Time Limit Exceeded'
+                    ? '⏱️ Time Limit Exceeded'
+                    : 'Submission processed',
+        testCases: (runData.results || []).map((result) => ({
           id: result.id,
           input: result.input,
           expected: result.expected,
           got: result.actual,
-          status: result.status
+          status: result.status,
+          error: result.error || null
         })),
-        runtime: runData.summary.executionTime,
-        memory: runData.summary.memoryUsage,
+        runtime: runData.summary?.executionTime,
+        memory: runData.summary?.memoryUsage,
+        passedCount: passed,
+        totalCount: total,
         xpChange: submitData.xpChange,
         newLevel: submitData.userStats?.level
       });
@@ -509,8 +548,11 @@ function LiveBattle() {
         ...prev,
         {
           time: new Date().toLocaleTimeString(),
-          message: isAccepted ? 'You submitted the correct solution!' : 'Submission failed',
-          type: isAccepted ? 'success' : 'error'
+          message:
+            verdict === 'Accepted'
+              ? 'You submitted the correct solution!'
+              : `Submission result: ${verdict}`,
+          type: verdict === 'Accepted' ? 'success' : 'error'
         }
       ]);
     } catch (error) {
@@ -774,6 +816,9 @@ function LiveBattle() {
                         </div>
                         <div className="mt-1 text-[10px] text-gray-400">Input: {tc.input}</div>
                         <div className="text-[10px] text-gray-400">Expected: {tc.expected} | Got: {tc.got}</div>
+                        {tc.error && (
+                          <div className="mt-1 text-[10px] text-red-300 whitespace-pre-wrap">{tc.error}</div>
+                        )}
                       </div>
                     ))}
                   </div>
