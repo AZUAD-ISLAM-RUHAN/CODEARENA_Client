@@ -21,6 +21,10 @@ function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [dailyChallenge, setDailyChallenge] = useState(null);
 
+  // State for dashboard data
+  const [dashboardData, setDashboardData] = useState(null);
+  const [dashboardLoading, setDashboardLoading] = useState(true);
+
   useEffect(() => {
     const fetchUserData = async () => {
       try {
@@ -117,23 +121,6 @@ function Dashboard() {
     }
   };
 
-  // Dynamic stats based on real user data
-  const stats = userData ? [
-    { label: 'XP Points', value: userData.experience?.toString() || '0', icon: '⚡', color: 'text-yellow-400' },
-    { label: 'Level', value: userData.level?.toString() || '1', icon: '🏆', color: 'text-purple-400' },
-    { label: 'Streak', value: `${userData.streak || 0} Days`, icon: '🔥', color: 'text-orange-400' },
-    { label: 'Problems Solved', value: (userData.solvedProblems?.length || 0).toString(), icon: '✅', color: 'text-green-400' },
-  ] : [
-    { label: 'XP Points', value: '0', icon: '⚡', color: 'text-yellow-400' },
-    { label: 'Level', value: '1', icon: '🏆', color: 'text-purple-400' },
-    { label: 'Streak', value: '0 Days', icon: '🔥', color: 'text-orange-400' },
-    { label: 'Problems Solved', value: '0', icon: '✅', color: 'text-green-400' },
-  ];
-
-  // State for dashboard data
-  const [dashboardData, setDashboardData] = useState(null);
-  const [dashboardLoading, setDashboardLoading] = useState(true);
-
   // Fetch dashboard data
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -162,6 +149,25 @@ function Dashboard() {
       fetchDashboardData();
     }
   }, [userData]);
+
+  const resolvedCurrentStreak =
+    dashboardData?.streakData?.currentStreak ??
+    userData?.currentStreak ??
+    userData?.streak ??
+    0;
+
+  // Dynamic stats based on real user data
+  const stats = userData ? [
+    { label: 'XP Points', value: userData.experience?.toString() || '0', icon: '⚡', color: 'text-yellow-400' },
+    { label: 'Level', value: userData.level?.toString() || '1', icon: '🏆', color: 'text-purple-400' },
+    { label: 'Streak', value: `${resolvedCurrentStreak} Days`, icon: '🔥', color: 'text-orange-400' },
+    { label: 'Problems Solved', value: (userData.solvedProblems?.length || 0).toString(), icon: '✅', color: 'text-green-400' },
+  ] : [
+    { label: 'XP Points', value: '0', icon: '⚡', color: 'text-yellow-400' },
+    { label: 'Level', value: '1', icon: '🏆', color: 'text-purple-400' },
+    { label: 'Streak', value: '0 Days', icon: '🔥', color: 'text-orange-400' },
+    { label: 'Problems Solved', value: '0', icon: '✅', color: 'text-green-400' },
+  ];
 
   // Dynamic recent activity based on dashboard data
   const recentActivity = dashboardData?.recentActivity || (userData && userData.solvedProblems && userData.solvedProblems.length > 0 ? [
@@ -394,7 +400,7 @@ function Dashboard() {
         {/* Daily Streak Section */}
         <motion.div variants={itemVariants} className="mt-6">
           <DailyStreak 
-            userStreak={dashboardData?.streakData?.currentStreak || userData?.streak || 0} 
+            userStreak={resolvedCurrentStreak} 
             goalDays={30} 
           />
         </motion.div>

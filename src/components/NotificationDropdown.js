@@ -1,46 +1,154 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+
 function NotificationDropdown() {
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
+  const [actionLoadingId, setActionLoadingId] = useState(null);
 
-  const unreadCount = notifications.filter(n => !n.read).length;
+  const unreadCount = notifications.filter(
+    (n) => n.type === 'battle_invite' || !n.read
+  ).length;
 
-  // Fetch real notifications from API when component mounts
-  useEffect(() => {
-    const fetchNotifications = async () => {
-      try {
-        const token = localStorage.getItem('token');
-        if (!token) return;
-        
-        // For now, show empty notifications
-        // When API is ready: const response = await fetch('http://localhost:5001/api/notifications', { headers: { 'Authorization': `Bearer ${token}` }});
+  const formatTime = (value) => {
+    if (!value) return 'Just now';
+    try {
+      return new Date(value).toLocaleString();
+    } catch (error) {
+      return 'Just now';
+    }
+  };
+
+  const getToken = () => localStorage.getItem('token');
+
+  const mapBattleInvitesToNotifications = (invites = []) => {
+    return invites.map((battle) => {
+      const inviter =
+        battle?.invitedBy?.username ||
+        battle?.invitedBy?.name ||
+        'Someone';
+
+      return {
+        id: battle._id,
+        battleId: battle._id,
+        read: false,
+        type: 'battle_invite',
+        title: 'Battle Invite',
+        message: `${inviter} invited you to a ${battle?.battleType || 'battle'} battle`,
+        time: formatTime(battle?.createdAt),
+        action: `/battle/${battle._id}`,
+        inviterName: inviter,
+        problemTitle: battle?.problem?.title || 'Random problem',
+      };
+    });
+  };
+
+  const fetchNotifications = async () => {
+    try {
+      const token = getToken();
+      if (!token) {
         setNotifications([]);
-      } catch (error) {
-        console.error('Error fetching notifications:', error);
-        setNotifications([]);
+        return;
       }
-    };
-    
+
+      const battleInviteResponse = await fetch(`${API_BASE}/battles/invites`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!battleInviteResponse.ok) {
+        setNotifications([]);
+        return;
+      }
+
+      const battleInviteData = await battleInviteResponse.json();
+      const battleInviteNotifications = mapBattleInvitesToNotifications(
+        battleInviteData?.invites || []
+      );
+
+      setNotifications((prev) => {
+        const previousReadMap = new Map(prev.map((item) => [item.id, item.read]));
+
+        return battleInviteNotifications.map((item) => ({
+          ...item,
+          read: previousReadMap.has(item.id) ? previousReadMap.get(item.id) : false,
+        }));
+      });
+    } catch (error) {
+      setNotifications([]);
+    }
+  };
+
+  useEffect(() => {
     fetchNotifications();
+
+    const intervalId = setInterval(() => {
+      fetchNotifications();
+    }, 3000);
+
+    return () => clearInterval(intervalId);
   }, []);
 
   const markAsRead = (id) => {
-    setNotifications(prev => 
-      prev.map(n => n.id === id ? { ...n, read: true } : n)
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, read: true } : n))
     );
   };
 
   const markAllAsRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    setNotifications((prev) =>
+      prev.map((n) =>
+        n.type === 'battle_invite'
+          ? n
+          : { ...n, read: true }
+      )
+    );
   };
 
   const handleNotificationClick = (notif) => {
+    if (notif.type === 'battle_invite') return;
+
     markAsRead(notif.id);
     setIsOpen(false);
     navigate(notif.action);
+  };
+
+  const handleBattleInviteResponse = async (battleId, response) => {
+    try {
+      const token = getToken();
+      if (!token) return;
+
+      setActionLoadingId(battleId);
+
+      const res = await fetch(`${API_BASE}/battles/${battleId}/respond`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ response }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        return;
+      }
+
+      await fetchNotifications();
+
+      if (response === 'accept' && data?.battle?._id) {
+        setIsOpen(false);
+        navigate(`/battle/${data.battle._id}`);
+      }
+    } catch (error) {
+    } finally {
+      setActionLoadingId(null);
+    }
   };
 
   const getIcon = (type) => {
@@ -69,16 +177,19 @@ function NotificationDropdown() {
 
   return (
     <div className="relative">
-      {/* Bell Button */}
-      <button 
+      <button
         onClick={() => setIsOpen(!isOpen)}
         className="relative p-2 text-gray-400 hover:text-white transition"
       >
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+          />
         </svg>
-        
-        {/* Unread Badge */}
+
         {unreadCount > 0 && (
           <span className="absolute top-0 right-0 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center animate-pulse">
             {unreadCount > 9 ? '9+' : unreadCount}
@@ -86,22 +197,18 @@ function NotificationDropdown() {
         )}
       </button>
 
-      {/* Dropdown */}
       {isOpen && (
         <>
-          {/* Backdrop */}
-          <div 
+          <div
             className="fixed inset-0 z-40"
             onClick={() => setIsOpen(false)}
           />
-          
-          {/* Notification Panel */}
+
           <div className="absolute right-0 mt-2 w-96 bg-gray-900 border border-gray-800 rounded-xl shadow-2xl z-50 overflow-hidden">
-            {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800 bg-gray-950">
               <h3 className="font-semibold text-white">Notifications</h3>
-              {unreadCount > 0 && (
-                <button 
+              {notifications.some((n) => n.type !== 'battle_invite' && !n.read) && (
+                <button
                   onClick={markAllAsRead}
                   className="text-xs text-yellow-400 hover:text-yellow-300 transition"
                 >
@@ -110,7 +217,6 @@ function NotificationDropdown() {
               )}
             </div>
 
-            {/* Notification List */}
             <div className="max-h-96 overflow-y-auto">
               {notifications.length === 0 ? (
                 <div className="p-8 text-center text-gray-500">
@@ -122,25 +228,65 @@ function NotificationDropdown() {
                   <div
                     key={notif.id}
                     onClick={() => handleNotificationClick(notif)}
-                    className={`p-4 border-b border-gray-800 cursor-pointer transition hover:bg-gray-800/50 ${
-                      !notif.read ? 'bg-yellow-400/5' : ''
+                    className={`p-4 border-b border-gray-800 transition ${
+                      notif.type === 'battle_invite'
+                        ? 'bg-red-400/5'
+                        : `cursor-pointer hover:bg-gray-800/50 ${!notif.read ? 'bg-yellow-400/5' : ''}`
                     }`}
                   >
                     <div className="flex gap-3">
                       <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg ${getColor(notif.type)}`}>
                         {getIcon(notif.type)}
                       </div>
+
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-2">
-                          <h4 className={`font-medium text-sm ${!notif.read ? 'text-white' : 'text-gray-300'}`}>
+                          <h4 className={`font-medium text-sm ${!notif.read || notif.type === 'battle_invite' ? 'text-white' : 'text-gray-300'}`}>
                             {notif.title}
                           </h4>
-                          {!notif.read && (
+
+                          {(notif.type === 'battle_invite' || !notif.read) && (
                             <span className="w-2 h-2 bg-yellow-400 rounded-full flex-shrink-0 mt-1.5" />
                           )}
                         </div>
-                        <p className="text-gray-400 text-sm mt-0.5 line-clamp-2">{notif.message}</p>
+
+                        <p className="text-gray-400 text-sm mt-0.5 line-clamp-2">
+                          {notif.message}
+                        </p>
+
+                        {notif.type === 'battle_invite' && (
+                          <p className="text-gray-500 text-xs mt-1">
+                            Problem: {notif.problemTitle}
+                          </p>
+                        )}
+
                         <p className="text-gray-500 text-xs mt-1">{notif.time}</p>
+
+                        {notif.type === 'battle_invite' && (
+                          <div className="flex gap-2 mt-3">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleBattleInviteResponse(notif.battleId, 'accept');
+                              }}
+                              disabled={actionLoadingId === notif.battleId}
+                              className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 text-white text-xs font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              Accept
+                            </button>
+
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleBattleInviteResponse(notif.battleId, 'reject');
+                              }}
+                              disabled={actionLoadingId === notif.battleId}
+                              className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              Reject
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -148,10 +294,12 @@ function NotificationDropdown() {
               )}
             </div>
 
-            {/* Footer */}
             <div className="px-4 py-3 border-t border-gray-800 bg-gray-950">
-              <button 
-                onClick={() => { setIsOpen(false); navigate('/notifications'); }}
+              <button
+                onClick={() => {
+                  setIsOpen(false);
+                  navigate('/notifications');
+                }}
                 className="w-full text-center text-sm text-gray-400 hover:text-white transition"
               >
                 View all notifications

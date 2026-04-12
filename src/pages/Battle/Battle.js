@@ -4,6 +4,8 @@ import NotificationDropdown from '../../components/NotificationDropdown';
 import ThemeToggle from '../../components/ThemeToggle';
 import { useTheme } from '../../context/ThemeContext';
 
+const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+
 function Battle() {
   const navigate = useNavigate();
   const { isDark } = useTheme();
@@ -32,12 +34,49 @@ function Battle() {
 
   const userId = user?._id || user?.id;
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('token');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
+  const getBattlePlayers = (battle) => {
+    if (Array.isArray(battle?.participants)) return battle.participants;
+    if (Array.isArray(battle?.players)) return battle.players;
+    return [];
+  };
+
+  const getPlayerId = (player) => {
+    if (!player) return null;
+
+    if (player.userId && typeof player.userId === 'object') return player.userId._id;
+    if (player.userId) return player.userId;
+
+    if (player.user && typeof player.user === 'object') return player.user._id;
+    if (player.user) return player.user;
+
+    return null;
+  };
+
+  const getPlayerName = (player, fallback = 'Player') => {
+    if (!player) return fallback;
+
+    if (player.userId && typeof player.userId === 'object') {
+      return player.userId.username || player.userId.name || player.username || fallback;
+    }
+
+    if (player.user && typeof player.user === 'object') {
+      return player.user.username || player.user.name || player.username || fallback;
+    }
+
+    return player.username || fallback;
+  };
+
   const fetchProfile = async () => {
     try {
       const token = localStorage.getItem('token');
       if (!token) return;
 
-      const response = await fetch('http://localhost:5001/api/auth/profile', {
+      const response = await fetch(`${API_BASE}/auth/profile`, {
         headers: {
           Authorization: `Bearer ${token}`
         }
@@ -57,25 +96,20 @@ function Battle() {
   const fetchBattles = async () => {
     try {
       setLoadingBattles(true);
-      const token = localStorage.getItem('token');
 
-      const headers = token
-        ? { Authorization: `Bearer ${token}` }
-        : {};
+      const headers = getAuthHeaders();
 
-      const activeBattlesResp = await fetch('http://localhost:5001/api/battles?status=active&limit=10', {
+      const activeBattlesResp = await fetch(`${API_BASE}/battles/live`, {
         headers
       });
       const activeBattlesData = await activeBattlesResp.json();
       setActiveBattles(activeBattlesData.battles || []);
 
-      if (userId) {
-        const recentBattlesResp = await fetch(`http://localhost:5001/api/battles/user/${userId}?limit=10`, {
-          headers
-        });
-        const recentBattlesData = await recentBattlesResp.json();
-        setRecentBattles(recentBattlesData.battles || []);
-      }
+      const recentBattlesResp = await fetch(`${API_BASE}/battles/history`, {
+        headers
+      });
+      const recentBattlesData = await recentBattlesResp.json();
+      setRecentBattles(recentBattlesData.battles || []);
     } catch (error) {
       console.error('Error fetching battles:', error);
       setActiveBattles([]);
@@ -110,16 +144,15 @@ function Battle() {
       setInviteStatus('');
       setFindingMatchType(type);
 
-      const response = await fetch('http://localhost:5001/api/battles/create', {
+      const response = await fetch(`${API_BASE}/battles/create`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
-          isRanked: type === 'ranked',
-          difficulty: 'Medium',
-          timeLimit: 15
+          battleMode: type,
+          battleType: type
         })
       });
 
@@ -131,7 +164,12 @@ function Battle() {
       }
 
       await fetchBattles();
-      navigate(`/battle/${data.battle._id}`);
+
+      if (data.battle.status === 'active') {
+        navigate(`/battle/${data.battle._id}`);
+      } else {
+        setInviteStatus(data.message || 'Waiting for opponent...');
+      }
     } catch (error) {
       console.error('Find match error:', error);
       setInviteStatus('Could not create battle. Please try again.');
@@ -156,7 +194,7 @@ function Battle() {
       setInviteLoading(true);
       setInviteStatus('');
 
-      const response = await fetch('http://localhost:5001/api/battles/create', {
+      const response = await fetch(`${API_BASE}/battles/create`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -164,9 +202,7 @@ function Battle() {
         },
         body: JSON.stringify({
           opponentUsername: friendUsername.trim(),
-          isRanked: false,
-          difficulty: 'Medium',
-          timeLimit: 15
+          battleMode: 'friendly'
         })
       });
 
@@ -177,21 +213,8 @@ function Battle() {
         return;
       }
 
-      const inviteLink = `${window.location.origin}/battle/${data.battle._id}`;
-
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        try {
-          await navigator.clipboard.writeText(inviteLink);
-          setInviteStatus(`Invite sent to ${friendUsername}! Link copied to clipboard.`);
-        } catch (error) {
-          setInviteStatus(`Invite sent. Share this link: ${inviteLink}`);
-        }
-      } else {
-        setInviteStatus(`Invite sent. Share this link: ${inviteLink}`);
-      }
-
+      setInviteStatus(`Invite sent to ${friendUsername}.`);
       await fetchBattles();
-      navigate(`/battle/${data.battle._id}`);
     } catch (error) {
       console.error('Send invite error:', error);
       setInviteStatus('Could not send invite. Please try again.');
@@ -214,6 +237,20 @@ function Battle() {
   };
 
   const getHistoryResult = (battle) => {
+    if (battle.status === 'rejected') {
+      return {
+        label: '❌ Rejected',
+        className: 'bg-red-400/10 text-red-400'
+      };
+    }
+
+    if (battle.status === 'cancelled') {
+      return {
+        label: '🚫 Cancelled',
+        className: 'bg-gray-400/10 text-gray-400'
+      };
+    }
+
     const winnerId =
       typeof battle.winner === 'object' && battle.winner !== null
         ? battle.winner._id
@@ -235,19 +272,20 @@ function Battle() {
   };
 
   const getOpponentName = (battle) => {
-    const opponent = (battle.participants || []).find((p) => {
-      const participantId =
-        typeof p.userId === 'object' && p.userId !== null ? p.userId._id : p.userId;
-      return String(participantId) !== String(userId);
-    });
-
+    const players = getBattlePlayers(battle);
+    const opponent = players.find((p) => String(getPlayerId(p)) !== String(userId));
     if (!opponent) return 'Waiting for Opponent';
+    return getPlayerName(opponent, 'Opponent');
+  };
 
-    if (typeof opponent.userId === 'object' && opponent.userId !== null) {
-      return opponent.userId.username || opponent.username || 'Opponent';
-    }
+  const getBattlePlayerOneName = (battle) => {
+    const players = getBattlePlayers(battle);
+    return getPlayerName(players[0], 'Player 1');
+  };
 
-    return opponent.username || 'Opponent';
+  const getBattlePlayerTwoName = (battle) => {
+    const players = getBattlePlayers(battle);
+    return getPlayerName(players[1], 'Waiting');
   };
 
   const profileInitial =
@@ -315,8 +353,7 @@ function Battle() {
           <div className={`border rounded-xl p-6 hover:border-yellow-400 transition cursor-pointer group ${isDark ? 'bg-gray-900 border-yellow-400/30' : 'bg-gray-50 border-yellow-200'}`}>
             <div className="text-4xl mb-3">⚔️</div>
             <h3 className={`text-xl font-bold transition-colors group-hover:text-yellow-400 ${isDark ? 'text-white' : 'text-gray-900'}`}>1v1 Ranked</h3>
-            <p className={`text-sm mt-2 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Compete for ELO rating. Win to climb the leaderboard!</p>
-            <div className={`mt-4 flex items-center gap-2 text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}><span>🟢 234 online</span></div>
+            <p className={`text-sm mt-2 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Compete for rating and higher XP rewards.</p>
             <button
               type="button"
               onClick={() => handleFindMatch('ranked')}
@@ -330,8 +367,7 @@ function Battle() {
           <div className={`border rounded-xl p-6 hover:border-gray-600 transition cursor-pointer group ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-gray-50 border-gray-200'}`}>
             <div className="text-4xl mb-3">🎮</div>
             <h3 className={`text-xl font-bold transition-colors group-hover:text-yellow-400 ${isDark ? 'text-white' : 'text-gray-900'}`}>1v1 Unranked</h3>
-            <p className={`text-sm mt-2 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Practice battles without affecting your rating.</p>
-            <div className={`mt-4 flex items-center gap-2 text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}><span>🟢 189 online</span></div>
+            <p className={`text-sm mt-2 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Practice battles with lower XP and no rating impact.</p>
             <button
               type="button"
               onClick={() => handleFindMatch('unranked')}
@@ -345,7 +381,7 @@ function Battle() {
           <div className={`border rounded-xl p-6 hover:border-gray-600 transition cursor-pointer group ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-gray-50 border-gray-200'}`}>
             <div className="text-4xl mb-3">🤝</div>
             <h3 className={`text-xl font-bold transition-colors group-hover:text-yellow-400 ${isDark ? 'text-white' : 'text-gray-900'}`}>Challenge Friend</h3>
-            <p className={`text-sm mt-2 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Send a battle invite link to your friend.</p>
+            <p className={`text-sm mt-2 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Friendly battle. No rating and no XP reward.</p>
             <div className="mt-4">
               <input
                 type="text"
@@ -403,7 +439,7 @@ function Battle() {
                   <tr className={`border-b text-sm ${isDark ? 'border-gray-800 text-gray-400' : 'border-gray-200 text-gray-600'}`}>
                     <th className="text-left px-6 py-4">Players</th>
                     <th className="text-left px-6 py-4">Problem</th>
-                    <th className="text-left px-6 py-4">Time</th>
+                    <th className="text-left px-6 py-4">Mode</th>
                     <th className="text-left px-6 py-4">Status</th>
                     <th className="text-left px-6 py-4">Action</th>
                   </tr>
@@ -412,12 +448,12 @@ function Battle() {
                   {activeBattles.map((battle) => (
                     <tr key={battle._id} className={`border-b last:border-0 transition-colors ${isDark ? 'border-gray-800 hover:bg-gray-800/50' : 'border-gray-200 hover:bg-gray-50'}`}>
                       <td className="px-6 py-4">
-                        <span className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>{battle.participants?.[0]?.username || battle.participants?.[0]?.userId?.username || 'Player 1'}</span>
+                        <span className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>{getBattlePlayerOneName(battle)}</span>
                         <span className="text-yellow-400 mx-2">vs</span>
-                        <span className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>{battle.participants?.[1]?.username || battle.participants?.[1]?.userId?.username || 'Waiting'}</span>
+                        <span className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>{getBattlePlayerTwoName(battle)}</span>
                       </td>
                       <td className={`px-6 py-4 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{battle.problem?.title || 'Unknown'}</td>
-                      <td className={`px-6 py-4 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>⏱️ {battle.timeLimit || 15} min</td>
+                      <td className={`px-6 py-4 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{battle.battleMode || battle.battleType || 'unranked'}</td>
                       <td className="px-6 py-4">
                         <span className="bg-red-500/10 text-red-400 text-xs px-2 py-1 rounded-full animate-pulse">🔴 {battle.status || 'ongoing'}</span>
                       </td>
@@ -455,6 +491,7 @@ function Battle() {
                   <tr className={`border-b text-sm ${isDark ? 'border-gray-800 text-gray-400' : 'border-gray-200 text-gray-600'}`}>
                     <th className="text-left px-6 py-4">Opponent</th>
                     <th className="text-left px-6 py-4">Problem</th>
+                    <th className="text-left px-6 py-4">Mode</th>
                     <th className="text-left px-6 py-4">Result</th>
                     <th className="text-left px-6 py-4">Time</th>
                   </tr>
@@ -467,12 +504,15 @@ function Battle() {
                       <tr key={battle._id} className={`border-b last:border-0 transition-colors ${isDark ? 'border-gray-800 hover:bg-gray-800/50' : 'border-gray-200 hover:bg-gray-50'}`}>
                         <td className={`px-6 py-4 font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>{getOpponentName(battle)}</td>
                         <td className={`px-6 py-4 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{battle.problem?.title || 'Unknown'}</td>
+                        <td className={`px-6 py-4 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{battle.battleMode || battle.battleType || 'unranked'}</td>
                         <td className="px-6 py-4">
                           <span className={`text-xs font-semibold px-2 py-1 rounded-full ${result.className}`}>
                             {result.label}
                           </span>
                         </td>
-                        <td className={`px-6 py-4 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{new Date(battle.createdAt).toLocaleDateString()}</td>
+                        <td className={`px-6 py-4 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                          {new Date(battle.endedAt || battle.updatedAt || battle.createdAt).toLocaleDateString()}
+                        </td>
                       </tr>
                     );
                   })}

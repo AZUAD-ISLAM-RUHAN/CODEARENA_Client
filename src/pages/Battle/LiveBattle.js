@@ -4,6 +4,8 @@ import Editor from '@monaco-editor/react';
 import ThemeToggle from '../../components/ThemeToggle';
 import { useTheme } from '../../context/ThemeContext';
 
+const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+
 function LiveBattle() {
   const navigate = useNavigate();
   const { battleId } = useParams();
@@ -61,6 +63,83 @@ function LiveBattle() {
     editorRef.current = editor;
   }
 
+  const getBattlePlayers = (battleData) => {
+    if (Array.isArray(battleData?.participants)) return battleData.participants;
+    if (Array.isArray(battleData?.players)) return battleData.players;
+    return [];
+  };
+
+  const getPlayerId = (player) => {
+    if (!player) return null;
+
+    if (player.userId && typeof player.userId === 'object') return player.userId._id;
+    if (player.userId) return player.userId;
+
+    if (player.user && typeof player.user === 'object') return player.user._id;
+    if (player.user) return player.user;
+
+    return null;
+  };
+
+  const getPlayerUsername = (player) => {
+    if (!player) return '';
+    if (player.userId && typeof player.userId === 'object') {
+      return player.userId.username || player.username || '';
+    }
+    if (player.user && typeof player.user === 'object') {
+      return player.user.username || player.username || '';
+    }
+    return player.username || '';
+  };
+
+  const getPlayerName = (player, fallback = 'Player') => {
+    if (!player) return fallback;
+
+    if (player.userId && typeof player.userId === 'object') {
+      return (
+        player.userId.username ||
+        player.userId.firstName ||
+        player.userId.name ||
+        player.username ||
+        fallback
+      );
+    }
+
+    if (player.user && typeof player.user === 'object') {
+      return (
+        player.user.username ||
+        player.user.firstName ||
+        player.user.name ||
+        player.username ||
+        fallback
+      );
+    }
+
+    return player.username || fallback;
+  };
+
+  const getPlayerProgress = (player) => {
+    if (!player) return 0;
+    if (player.isWinner) return 100;
+    if (player.submittedAt) return 70;
+    return 0;
+  };
+
+  const getPlayerStatus = (player) => {
+    if (!player) return 'coding';
+    if (player.isWinner) return 'winner';
+    if (player.submittedAt) return 'submitted';
+    return 'coding';
+  };
+
+  const safeReadJson = async (response) => {
+    try {
+      return await response.json();
+    } catch (error) {
+      return {};
+    }
+  };
+
   const handleLeaveBattle = async () => {
     if (battleStatus !== 'active') {
       navigate('/battle');
@@ -81,7 +160,7 @@ function LiveBattle() {
         return;
       }
 
-      const response = await fetch(`http://localhost:5001/api/battles/${battleId}/end`, {
+      const response = await fetch(`${API_BASE}/battles/${battleId}/end`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -89,10 +168,16 @@ function LiveBattle() {
         }
       });
 
-      const data = await response.json().catch(() => ({}));
+      const data = await safeReadJson(response);
 
       if (!response.ok) {
         throw new Error(data.message || 'Failed to end battle');
+      }
+
+      if (data.userStats) {
+        const updatedUser = { ...user, ...data.userStats._doc, ...data.userStats };
+        setUser(updatedUser);
+        localStorage.setItem('currentUser', JSON.stringify(updatedUser));
       }
 
       setBattleStatus('lost');
@@ -115,10 +200,10 @@ function LiveBattle() {
       let resolvedUser = user;
 
       if (token && !profileFetchedRef.current) {
-        const profileResp = await fetch('http://localhost:5001/api/auth/profile', {
+        const profileResp = await fetch(`${API_BASE}/auth/profile`, {
           headers
         });
-        const profileData = await profileResp.json();
+        const profileData = await safeReadJson(profileResp);
 
         if (profileResp.ok && profileData.user) {
           resolvedUser = profileData.user;
@@ -130,10 +215,10 @@ function LiveBattle() {
 
       const resolvedUserId = resolvedUser?._id || resolvedUser?.id;
 
-      const response = await fetch(`http://localhost:5001/api/battles/${battleId}`, {
+      const response = await fetch(`${API_BASE}/battles/${battleId}`, {
         headers
       });
-      const data = await response.json();
+      const data = await safeReadJson(response);
 
       if (!response.ok || !data.battle) {
         throw new Error(data.message || 'Battle not found');
@@ -169,33 +254,20 @@ function LiveBattle() {
         setBattleStatus('active');
       }
 
-      const participants = nextBattle.participants || [];
-      const otherParticipant = participants.find((p) => {
-        const participantId =
-          typeof p.userId === 'object' && p.userId !== null ? p.userId._id : p.userId;
-        return String(participantId) !== String(resolvedUserId);
-      });
+      const players = getBattlePlayers(nextBattle);
+      const otherPlayer = players.find(
+        (p) => String(getPlayerId(p)) !== String(resolvedUserId)
+      );
 
       setOpponent({
-        name:
-          otherParticipant?.userId?.username ||
-          otherParticipant?.username ||
-          'Waiting for Opponent',
-        avatar:
-          (otherParticipant?.userId?.username || otherParticipant?.username || 'O')
-            .charAt(0)
-            .toUpperCase(),
-        progress:
-          otherParticipant?.status === 'winner'
-            ? 100
-            : otherParticipant?.status === 'submitted'
-              ? 70
-              : 0,
-        status: otherParticipant?.status || 'coding',
-        lastSubmission: otherParticipant?.submittedAt || null
+        name: getPlayerName(otherPlayer, 'Waiting for Opponent'),
+        avatar: getPlayerName(otherPlayer, 'O').charAt(0).toUpperCase(),
+        progress: getPlayerProgress(otherPlayer),
+        status: getPlayerStatus(otherPlayer),
+        lastSubmission: otherPlayer?.submittedAt || null
       });
 
-      if (showLoader) {
+      if (showLoader && fetchedProblem) {
         setBattleLog((prev) => [
           ...prev,
           {
@@ -257,27 +329,34 @@ function LiveBattle() {
         return;
       }
 
-      const otherParticipant = (battle?.participants || []).find((p) => {
-        const participantId =
-          typeof p.userId === 'object' && p.userId !== null ? p.userId._id : p.userId;
-        return String(participantId) !== String(currentUserId);
-      });
+      const otherPlayer = getBattlePlayers(battle).find(
+        (p) => String(getPlayerId(p)) !== String(currentUserId)
+      );
 
-      const response = await fetch('http://localhost:5001/api/battles/create', {
+      const currentBattleMode =
+        battle?.battleMode ||
+        (battle?.invitedBy || battle?.invitedUser ? 'friendly' : battle?.battleType || 'unranked');
+
+      const response = await fetch(`${API_BASE}/battles/create`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({
-          opponentUsername: otherParticipant?.userId?.username || otherParticipant?.username || undefined,
-          isRanked: battle?.isRanked || false,
-          difficulty: battle?.problem?.difficulty || 'Medium',
-          timeLimit: battle?.timeLimit || 15
-        })
+        body: JSON.stringify(
+          currentBattleMode === 'friendly'
+            ? {
+                opponentUsername: getPlayerUsername(otherPlayer),
+                battleMode: 'friendly'
+              }
+            : {
+                battleMode: currentBattleMode,
+                battleType: currentBattleMode
+              }
+        )
       });
 
-      const data = await response.json();
+      const data = await safeReadJson(response);
 
       if (!response.ok || !data.battle?._id) {
         return;
@@ -302,7 +381,7 @@ function LiveBattle() {
         return;
       }
 
-      const response = await fetch('http://localhost:5001/api/execute/run', {
+      const response = await fetch(`${API_BASE}/execute/run`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -315,7 +394,7 @@ function LiveBattle() {
         })
       });
 
-      const data = await response.json();
+      const data = await safeReadJson(response);
 
       if (!response.ok) {
         setOutput({
@@ -394,7 +473,7 @@ function LiveBattle() {
         return;
       }
 
-      const runResponse = await fetch('http://localhost:5001/api/execute/run', {
+      const runResponse = await fetch(`${API_BASE}/execute/run`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -407,7 +486,7 @@ function LiveBattle() {
         })
       });
 
-      const runData = await runResponse.json();
+      const runData = await safeReadJson(runResponse);
 
       if (!runResponse.ok) {
         setOutput({
@@ -422,7 +501,7 @@ function LiveBattle() {
       const allPassed = verdict === 'Accepted';
       const isAccepted = allPassed;
 
-      const submitResponse = await fetch('http://localhost:5001/api/submissions', {
+      const submitResponse = await fetch(`${API_BASE}/submissions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -436,7 +515,7 @@ function LiveBattle() {
         })
       });
 
-      const submitData = await submitResponse.json();
+      const submitData = await safeReadJson(submitResponse);
 
       if (!submitResponse.ok) {
         setOutput({
@@ -447,20 +526,21 @@ function LiveBattle() {
         return;
       }
 
-      const battleSubmitResponse = await fetch(`http://localhost:5001/api/battles/${battleId}/submit`, {
+      const battleSubmitResponse = await fetch(`${API_BASE}/battles/${battleId}/submit`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
+          code,
+          language,
           isAccepted,
-          submissionId: submitData.submission?.id || null,
           executionTime: runData.summary?.executionTime || null
         })
       });
 
-      const battleSubmitData = await battleSubmitResponse.json();
+      const battleSubmitData = await safeReadJson(battleSubmitResponse);
 
       if (battleSubmitResponse.ok && battleSubmitData.battle) {
         setBattle(battleSubmitData.battle);
@@ -474,34 +554,24 @@ function LiveBattle() {
           setBattleStatus(String(winnerId) === String(currentUserId) ? 'won' : 'lost');
         }
 
-        const participants = battleSubmitData.battle.participants || [];
-        const otherParticipant = participants.find((p) => {
-          const participantId =
-            typeof p.userId === 'object' && p.userId !== null ? p.userId._id : p.userId;
-          return String(participantId) !== String(currentUserId);
-        });
+        const otherPlayer = getBattlePlayers(battleSubmitData.battle).find(
+          (p) => String(getPlayerId(p)) !== String(currentUserId)
+        );
 
         setOpponent({
-          name:
-            otherParticipant?.userId?.username ||
-            otherParticipant?.username ||
-            'Waiting for Opponent',
-          avatar:
-            (otherParticipant?.userId?.username || otherParticipant?.username || 'O')
-              .charAt(0)
-              .toUpperCase(),
-          progress:
-            otherParticipant?.status === 'winner'
-              ? 100
-              : otherParticipant?.status === 'submitted'
-                ? 70
-                : 0,
-          status: otherParticipant?.status || 'coding',
-          lastSubmission: otherParticipant?.submittedAt || null
+          name: getPlayerName(otherPlayer, 'Waiting for Opponent'),
+          avatar: getPlayerName(otherPlayer, 'O').charAt(0).toUpperCase(),
+          progress: getPlayerProgress(otherPlayer),
+          status: getPlayerStatus(otherPlayer),
+          lastSubmission: otherPlayer?.submittedAt || null
         });
       }
 
-      if (submitData.userStats) {
+      if (battleSubmitData.userStats) {
+        const updatedUser = { ...user, ...battleSubmitData.userStats._doc, ...battleSubmitData.userStats };
+        setUser(updatedUser);
+        localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+      } else if (submitData.userStats) {
         const updatedUser = { ...user, ...submitData.userStats };
         setUser(updatedUser);
         localStorage.setItem('currentUser', JSON.stringify(updatedUser));
@@ -541,7 +611,7 @@ function LiveBattle() {
         passedCount: passed,
         totalCount: total,
         xpChange: submitData.xpChange,
-        newLevel: submitData.userStats?.level
+        newLevel: battleSubmitData.userStats?.level || submitData.userStats?.level
       });
 
       setBattleLog((prev) => [
@@ -575,6 +645,7 @@ function LiveBattle() {
       case 'won':
         return 'text-green-400';
       case 'loser':
+      case 'lost':
         return 'text-red-400';
       default:
         return 'text-gray-400';
@@ -591,6 +662,7 @@ function LiveBattle() {
       case 'won':
         return '✅ Solved!';
       case 'loser':
+      case 'lost':
         return '❌ Lost';
       default:
         return '';
