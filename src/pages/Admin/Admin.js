@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+// client/pages/Admin/Admin.js
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -22,6 +23,7 @@ function Admin() {
   const { isDark } = useTheme();
   const navigate = useNavigate();
   const API_BASE = 'http://localhost:5001/api';
+  const PROBLEM_PAGE_SIZE = 25;
 
   const initialContestForm = {
     title: '',
@@ -32,6 +34,26 @@ function Admin() {
     maxParticipants: '',
     isPublic: true,
     problemIds: []
+  };
+
+  const initialProblemForm = {
+    title: '',
+    description: '',
+    difficulty: 'Easy',
+    category: '',
+    tagsText: '',
+    inputFormat: '',
+    outputFormat: '',
+    constraints: '',
+    sampleInput: '',
+    sampleOutput: '',
+    timeLimit: 1000,
+    memoryLimit: 256,
+    isActive: true,
+    testCases: [
+      { input: '', output: '', isHidden: false },
+      { input: '', output: '', isHidden: true }
+    ]
   };
 
   const contestDifficultyOptions = [
@@ -45,28 +67,36 @@ function Admin() {
     'Advanced'
   ];
 
+  const problemDifficultyOptions = ['Easy', 'Medium', 'Hard', 'Expert'];
+
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showAddProblemModal, setShowAddProblemModal] = useState(false);
   const [showCreateContestModal, setShowCreateContestModal] = useState(false);
 
-  const [newProblemInfo, setNewProblemInfo] = useState({
-    title: '',
-    difficulty: 'Easy',
-    topic: '',
-    submissions: 0,
-    acceptance: 0,
-    status: 'active'
-  });
+  const [problemFormMode, setProblemFormMode] = useState('create');
+  const [editingProblemId, setEditingProblemId] = useState(null);
+  const [problemForm, setProblemForm] = useState(initialProblemForm);
+  const [problemActionLoading, setProblemActionLoading] = useState(false);
+  const [problemDeleteLoadingId, setProblemDeleteLoadingId] = useState(null);
 
   const [contestForm, setContestForm] = useState(initialContestForm);
   const [editingContestId, setEditingContestId] = useState(null);
   const [contestActionLoading, setContestActionLoading] = useState(false);
   const [contestLeaderboardLoading, setContestLeaderboardLoading] = useState(false);
+  const [contestProblemSearch, setContestProblemSearch] = useState('');
 
   const [selectedContestForLeaderboard, setSelectedContestForLeaderboard] = useState(null);
   const [selectedContestLeaderboard, setSelectedContestLeaderboard] = useState([]);
 
   const [problems, setProblems] = useState([]);
+  const [allProblemOptions, setAllProblemOptions] = useState([]);
+  const [problemCategories, setProblemCategories] = useState([]);
+  const [problemPagination, setProblemPagination] = useState({
+    total: 0,
+    totalPages: 1,
+    currentPage: 1
+  });
+
   const [contests, setContests] = useState([]);
   const [users, setUsers] = useState([]);
   const [platformLeaderboard, setPlatformLeaderboard] = useState([]);
@@ -83,15 +113,20 @@ function Admin() {
     totalSubmissions: 0,
     activeBattles: 0,
     todaySubmissions: 0,
-    newUsersToday: 0
+    newUsersToday: 0,
+    departmentData: [],
+    submissionTrend: [],
+    difficultyDistribution: []
   });
 
+  const [submissions, setSubmissions] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const [problemSearch, setProblemSearch] = useState('');
   const [difficultyFilter, setDifficultyFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
   const [topicFilter, setTopicFilter] = useState('All');
+  const [problemPage, setProblemPage] = useState(1);
 
   const [userSearch, setUserSearch] = useState('');
   const [userDeptFilter, setUserDeptFilter] = useState('All');
@@ -105,37 +140,6 @@ function Admin() {
   const [contestSearch, setContestSearch] = useState('');
   const [contestStatusFilter, setContestStatusFilter] = useState('All');
   const [contestDifficultyFilter, setContestDifficultyFilter] = useState('All');
-
-  const departmentData = [
-    { name: 'CSE', students: 450, submissions: 8500 },
-    { name: 'EEE', students: 320, submissions: 3200 },
-    { name: 'BBA', students: 280, submissions: 2100 },
-    { name: 'ENG', students: 195, submissions: 1620 }
-  ];
-
-  const submissionTrend = [
-    { day: 'Mon', submissions: 120 },
-    { day: 'Tue', submissions: 145 },
-    { day: 'Wed', submissions: 138 },
-    { day: 'Thu', submissions: 190 },
-    { day: 'Fri', submissions: 220 },
-    { day: 'Sat', submissions: 280 },
-    { day: 'Sun', submissions: 156 }
-  ];
-
-  const difficultyDistribution = [
-    { name: 'Easy', value: 35, color: '#4ade80' },
-    { name: 'Medium', value: 40, color: '#facc15' },
-    { name: 'Hard', value: 20, color: '#f87171' },
-    { name: 'Expert', value: 5, color: '#c084fc' }
-  ];
-
-  const submissions = [
-    { id: 1, user: 'Arif Hossain', problem: 'Two Sum', language: 'JavaScript', verdict: 'Accepted', time: '2 min ago' },
-    { id: 2, user: 'Rakib Hassan', problem: 'Binary Search', language: 'Python', verdict: 'Accepted', time: '5 min ago' },
-    { id: 3, user: 'Sadia Islam', problem: 'Two Sum', language: 'C++', verdict: 'Wrong Answer', time: '12 min ago' },
-    { id: 4, user: 'Nabil Ahmed', problem: 'Merge Sort', language: 'Java', verdict: 'Time Limit Exceeded', time: '15 min ago' }
-  ];
 
   useEffect(() => {
     const isAdmin = localStorage.getItem('isAdmin') === 'true';
@@ -226,6 +230,56 @@ function Admin() {
     leaderboard: Array.isArray(contest.leaderboard) ? contest.leaderboard : []
   });
 
+  const formatProblemForModal = (problem) => ({
+    title: problem.title || '',
+    description: problem.description || '',
+    difficulty: problem.difficulty || 'Easy',
+    category: problem.category || '',
+    tagsText: Array.isArray(problem.tags) ? problem.tags.join(', ') : '',
+    inputFormat: problem.inputFormat || '',
+    outputFormat: problem.outputFormat || '',
+    constraints: problem.constraints || '',
+    sampleInput: problem.sampleInput || '',
+    sampleOutput: problem.sampleOutput || '',
+    timeLimit: problem.timeLimit || 1000,
+    memoryLimit: problem.memoryLimit || 256,
+    isActive: problem.isActive !== false,
+    testCases:
+      Array.isArray(problem.testCases) && problem.testCases.length > 0
+        ? problem.testCases.map((testCase) => ({
+            input: testCase.input || '',
+            output: testCase.output || '',
+            isHidden: Boolean(testCase.isHidden)
+          }))
+        : [
+            { input: '', output: '', isHidden: false },
+            { input: '', output: '', isHidden: true }
+          ]
+  });
+
+  const normalizeProblemSummary = (problem) => ({
+    id: problem._id || problem.id,
+    title: problem.title,
+    difficulty: problem.difficulty,
+    topic: problem.category || 'General',
+    submissions: problem.totalSubmissions || 0,
+    acceptance:
+      typeof problem.acceptanceRate === 'number'
+        ? problem.acceptanceRate
+        : problem.acceptedSubmissions
+          ? Math.round((problem.acceptedSubmissions / Math.max(problem.totalSubmissions || 1, 1)) * 100)
+          : 0,
+    status: problem.isActive ? 'active' : 'inactive',
+    testCaseCount:
+      typeof problem.testCaseCount === 'number'
+        ? problem.testCaseCount
+        : Array.isArray(problem.testCases)
+          ? problem.testCases.length
+          : 0,
+    createdAt: problem.createdAt,
+    updatedAt: problem.updatedAt
+  });
+
   const formatDateTime = (dateValue) => {
     if (!dateValue) return 'N/A';
     const date = new Date(dateValue);
@@ -233,68 +287,164 @@ function Admin() {
     return date.toLocaleString();
   };
 
-  const fetchProblems = async (headers) => {
+  const formatSubmissionTime = (dateValue) => {
+    const date = new Date(dateValue);
+    if (Number.isNaN(date.getTime())) return 'Unknown time';
+    return date.toLocaleString();
+  };
+
+  const buildProblemAdminQuery = useCallback((pageNumber) => {
+    const params = new URLSearchParams();
+    params.set('page', String(pageNumber));
+    params.set('limit', String(PROBLEM_PAGE_SIZE));
+
+    if (problemSearch.trim()) {
+      params.set('search', problemSearch.trim());
+    }
+    if (difficultyFilter !== 'All') {
+      params.set('difficulty', difficultyFilter);
+    }
+    if (statusFilter !== 'All') {
+      params.set('status', statusFilter);
+    }
+    if (topicFilter !== 'All') {
+      params.set('category', topicFilter);
+    }
+
+    return params.toString();
+  }, [problemSearch, difficultyFilter, statusFilter, topicFilter]);
+
+  const fetchProblems = useCallback(async (headers, pageNumber = 1) => {
+    const response = await fetch(
+      `${API_BASE}/problems/admin/list?${buildProblemAdminQuery(pageNumber)}`,
+      { headers }
+    );
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to fetch problems');
+    }
+
+    setProblems(Array.isArray(data.problems) ? data.problems.map(normalizeProblemSummary) : []);
+    setProblemCategories(Array.isArray(data.categories) ? data.categories : []);
+    setProblemPagination({
+      total: data.total || 0,
+      totalPages: data.totalPages || 1,
+      currentPage: data.currentPage || pageNumber
+    });
+  }, [API_BASE, buildProblemAdminQuery]);
+
+  const fetchAllProblemOptions = useCallback(async (headers) => {
     const response = await fetch(`${API_BASE}/problems?limit=1000`, { headers });
     const data = await response.json();
 
-    if (data.problems) {
-      const formattedProblems = data.problems.map((problem) => ({
-        id: problem._id,
-        title: problem.title,
-        difficulty: problem.difficulty,
-        topic: problem.category || 'General',
-        submissions: problem.totalSubmissions || 0,
-        acceptance: problem.acceptedSubmissions
-          ? Math.round((problem.acceptedSubmissions / Math.max(problem.totalSubmissions || 1, 1)) * 100)
-          : 0,
-        status: problem.isActive ? 'active' : 'inactive'
-      }));
-
-      setProblems(formattedProblems);
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to fetch problem options');
     }
-  };
 
-  const fetchUsers = async (headers) => {
+    const formatted = Array.isArray(data.problems)
+      ? data.problems.map((problem) => ({
+          id: problem._id,
+          title: problem.title,
+          difficulty: problem.difficulty,
+          topic: problem.category || 'General',
+          submissions: problem.totalSubmissions || 0,
+          acceptance: problem.acceptedSubmissions
+            ? Math.round((problem.acceptedSubmissions / Math.max(problem.totalSubmissions || 1, 1)) * 100)
+            : 0
+        }))
+      : [];
+
+    setAllProblemOptions(formatted);
+  }, [API_BASE]);
+
+  const fetchProblemById = useCallback(async (problemId) => {
+    const response = await fetch(`${API_BASE}/problems/admin/${problemId}`, {
+      headers: getAuthHeaders()
+    });
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to load problem');
+    }
+
+    return data.problem;
+  }, []);
+
+  const fetchUsers = useCallback(async (headers) => {
     const response = await fetch(`${API_BASE}/admin/users`, { headers });
     const data = await response.json();
 
-    if (data.users) {
-      const formattedUsers = data.users.map((user) => ({
-        id: user._id,
-        name: user.username,
-        email: user.email,
-        dept: user.department || 'CSE',
-        batch: user.batch || '2022',
-        status: user.isActive ? 'active' : 'banned',
-        role: user.role || 'student',
-        solved: Array.isArray(user.solvedProblems) ? user.solvedProblems.length : 0
-      }));
-
-      setUsers(formattedUsers);
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to fetch users');
     }
-  };
 
-  const fetchStats = async (headers) => {
+    const formattedUsers = Array.isArray(data.users)
+      ? data.users.map((user) => ({
+          id: user._id,
+          name: user.username,
+          email: user.email,
+          dept: user.department || 'CSE',
+          batch: user.batch || '2022',
+          status: user.isActive === false ? 'banned' : 'active',
+          role: user.role || 'user',
+          solved: Array.isArray(user.solvedProblems) ? user.solvedProblems.length : 0
+        }))
+      : [];
+
+    setUsers(formattedUsers);
+  }, [API_BASE]);
+
+  const fetchStats = useCallback(async (headers) => {
     const response = await fetch(`${API_BASE}/admin/stats`, { headers });
     const data = await response.json();
 
-    if (data) {
-      setStats(data);
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to fetch stats');
     }
-  };
 
-  const fetchContests = async (headers) => {
+    setStats({
+      totalUsers: data.totalUsers || 0,
+      totalProblems: data.totalProblems || 0,
+      totalSubmissions: data.totalSubmissions || 0,
+      activeBattles: data.activeBattles || 0,
+      todaySubmissions: data.todaySubmissions || 0,
+      newUsersToday: data.newUsersToday || 0,
+      departmentData: Array.isArray(data.departmentData) ? data.departmentData : [],
+      submissionTrend: Array.isArray(data.submissionTrend) ? data.submissionTrend : [],
+      difficultyDistribution: Array.isArray(data.difficultyDistribution) ? data.difficultyDistribution : []
+    });
+  }, [API_BASE]);
+
+  const fetchSubmissions = useCallback(async (headers) => {
+    const response = await fetch(`${API_BASE}/admin/submissions?limit=200`, { headers });
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to fetch submissions');
+    }
+
+    setSubmissions(Array.isArray(data.submissions) ? data.submissions : []);
+  }, [API_BASE]);
+
+  const fetchContests = useCallback(async (headers) => {
     const response = await fetch(`${API_BASE}/contests?limit=1000`, { headers });
     const data = await response.json();
 
-    if (Array.isArray(data.contests)) {
-      setContests(data.contests.map(formatContestForDisplay));
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to fetch contests');
     }
-  };
 
-  const fetchPlatformLeaderboard = async (headers) => {
+    setContests(Array.isArray(data.contests) ? data.contests.map(formatContestForDisplay) : []);
+  }, [API_BASE]);
+
+  const fetchPlatformLeaderboard = useCallback(async (headers) => {
     const response = await fetch(`${API_BASE}/leaderboard?sortBy=rating&limit=20`, { headers });
     const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to fetch leaderboard');
+    }
 
     if (Array.isArray(data.leaderboard)) {
       setPlatformLeaderboard(data.leaderboard);
@@ -307,23 +457,34 @@ function Admin() {
         }
       );
     }
-  };
+  }, [API_BASE]);
 
-  const refreshAllAdminData = async () => {
+  const refreshAllAdminData = useCallback(async (pageNumber = problemPage) => {
     const headers = getAuthHeaders();
     await Promise.all([
-      fetchProblems(headers),
+      fetchProblems(headers, pageNumber),
+      fetchAllProblemOptions(headers),
       fetchUsers(headers),
       fetchStats(headers),
+      fetchSubmissions(headers),
       fetchContests(headers),
       fetchPlatformLeaderboard(headers)
     ]);
-  };
+  }, [
+    problemPage,
+    fetchProblems,
+    fetchAllProblemOptions,
+    fetchUsers,
+    fetchStats,
+    fetchSubmissions,
+    fetchContests,
+    fetchPlatformLeaderboard
+  ]);
 
   useEffect(() => {
     const run = async () => {
       try {
-        await refreshAllAdminData();
+        await refreshAllAdminData(problemPage);
       } catch (error) {
         console.error('Error fetching admin data:', error);
       } finally {
@@ -332,49 +493,187 @@ function Admin() {
     };
 
     run();
-  }, []);
+  }, [problemPage, refreshAllAdminData]);
 
-  const handleSaveProblem = () => {
-    if (!newProblemInfo.title.trim() || !newProblemInfo.topic.trim()) {
-      alert('Please add title and topic.');
-      return;
-    }
+  useEffect(() => {
+    setProblemPage(1);
+  }, [problemSearch, difficultyFilter, statusFilter, topicFilter]);
 
-    setProblems((prev) => [
-      ...prev,
-      {
-        ...newProblemInfo,
-        id: prev.length ? `${Date.now()}-${prev.length}` : '1'
-      }
-    ]);
-
-    setNewProblemInfo({
-      title: '',
-      difficulty: 'Easy',
-      topic: '',
-      submissions: 0,
-      acceptance: 0,
-      status: 'active'
-    });
+  const resetProblemModal = () => {
+    setProblemForm(initialProblemForm);
+    setProblemFormMode('create');
+    setEditingProblemId(null);
     setShowAddProblemModal(false);
-    setActiveTab('problems');
+  };
+
+  const openCreateProblemModal = () => {
+    setProblemForm(initialProblemForm);
+    setProblemFormMode('create');
+    setEditingProblemId(null);
+    setShowAddProblemModal(true);
+  };
+
+  const openEditProblemModal = async (problemId) => {
+    try {
+      setProblemActionLoading(true);
+      const problem = await fetchProblemById(problemId);
+      setProblemForm(formatProblemForModal(problem));
+      setProblemFormMode('edit');
+      setEditingProblemId(problemId);
+      setShowAddProblemModal(true);
+    } catch (error) {
+      console.error('Load problem error:', error);
+      alert(error.message || 'Failed to load problem');
+    } finally {
+      setProblemActionLoading(false);
+    }
+  };
+
+  const buildProblemPayload = () => ({
+    title: problemForm.title.trim(),
+    description: problemForm.description.trim(),
+    difficulty: problemForm.difficulty,
+    category: problemForm.category.trim(),
+    tags: problemForm.tagsText
+      .split(',')
+      .map((tag) => tag.trim())
+      .filter(Boolean),
+    inputFormat: problemForm.inputFormat.trim(),
+    outputFormat: problemForm.outputFormat.trim(),
+    constraints: problemForm.constraints.trim(),
+    sampleInput: problemForm.sampleInput,
+    sampleOutput: problemForm.sampleOutput,
+    timeLimit: Number(problemForm.timeLimit),
+    memoryLimit: Number(problemForm.memoryLimit),
+    isActive: Boolean(problemForm.isActive),
+    testCases: problemForm.testCases.map((testCase) => ({
+      input: testCase.input,
+      output: testCase.output,
+      isHidden: Boolean(testCase.isHidden)
+    }))
+  });
+
+  const handleSaveProblem = async () => {
+    try {
+      setProblemActionLoading(true);
+
+      const url =
+        problemFormMode === 'edit' && editingProblemId
+          ? `${API_BASE}/problems/${editingProblemId}`
+          : `${API_BASE}/problems`;
+
+      const method = problemFormMode === 'edit' ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method,
+        headers: getAuthHeaders(true),
+        body: JSON.stringify(buildProblemPayload())
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to save problem');
+      }
+
+      await Promise.all([
+        fetchProblems(getAuthHeaders(), problemPage),
+        fetchAllProblemOptions(getAuthHeaders()),
+        fetchStats(getAuthHeaders())
+      ]);
+
+      resetProblemModal();
+      setActiveTab('problems');
+    } catch (error) {
+      console.error('Save problem error:', error);
+      alert(error.message || 'Failed to save problem');
+    } finally {
+      setProblemActionLoading(false);
+    }
+  };
+
+  const handleDeleteProblem = async (problemId) => {
+    const confirmed = window.confirm('Are you sure you want to delete this problem?');
+    if (!confirmed) return;
+
+    try {
+      setProblemDeleteLoadingId(problemId);
+
+      const response = await fetch(`${API_BASE}/problems/${problemId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to delete problem');
+      }
+
+      const nextPage =
+        problems.length === 1 && problemPage > 1 ? problemPage - 1 : problemPage;
+
+      if (nextPage !== problemPage) {
+        setProblemPage(nextPage);
+      } else {
+        await fetchProblems(getAuthHeaders(), nextPage);
+      }
+
+      await Promise.all([
+        fetchAllProblemOptions(getAuthHeaders()),
+        fetchStats(getAuthHeaders())
+      ]);
+    } catch (error) {
+      console.error('Delete problem error:', error);
+      alert(error.message || 'Failed to delete problem');
+    } finally {
+      setProblemDeleteLoadingId(null);
+    }
+  };
+
+  const handleUserStatusToggle = async (user) => {
+    try {
+      const nextIsActive = user.status === 'banned';
+      const response = await fetch(`${API_BASE}/admin/users/${user.id}/status`, {
+        method: 'PATCH',
+        headers: getAuthHeaders(true),
+        body: JSON.stringify({ isActive: nextIsActive })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to update user status');
+      }
+
+      await Promise.all([
+        fetchUsers(getAuthHeaders()),
+        fetchStats(getAuthHeaders())
+      ]);
+    } catch (error) {
+      console.error('User status error:', error);
+      alert(error.message || 'Failed to update user status');
+    }
   };
 
   const resetContestModal = () => {
     setContestForm(initialContestForm);
     setEditingContestId(null);
+    setContestProblemSearch('');
     setShowCreateContestModal(false);
   };
 
   const openCreateContestModal = () => {
     setEditingContestId(null);
     setContestForm(initialContestForm);
+    setContestProblemSearch('');
     setShowCreateContestModal(true);
   };
 
   const openEditContestModal = (contest) => {
     setEditingContestId(contest.id);
     setContestForm(formatContestForForm(contest));
+    setContestProblemSearch('');
     setShowCreateContestModal(true);
   };
 
@@ -437,7 +736,11 @@ function Admin() {
         throw new Error(data.message || 'Failed to save contest');
       }
 
-      await Promise.all([fetchContests(getAuthHeaders()), fetchPlatformLeaderboard(getAuthHeaders())]);
+      await Promise.all([
+        fetchContests(getAuthHeaders()),
+        fetchPlatformLeaderboard(getAuthHeaders())
+      ]);
+
       resetContestModal();
       setActiveTab('contests');
     } catch (error) {
@@ -495,7 +798,10 @@ function Admin() {
         throw new Error(data.message || 'Failed to finalize contest');
       }
 
-      await Promise.all([fetchContests(getAuthHeaders()), fetchPlatformLeaderboard(getAuthHeaders())]);
+      await Promise.all([
+        fetchContests(getAuthHeaders()),
+        fetchPlatformLeaderboard(getAuthHeaders())
+      ]);
 
       if (data.contest) {
         setSelectedContestForLeaderboard(formatContestForDisplay(data.contest));
@@ -542,24 +848,35 @@ function Admin() {
     navigate('/admin-login');
   };
 
-  const filteredProblems = useMemo(
-    () =>
-      problems.filter((problem) => {
-        const matchesSearch = problem.title.toLowerCase().includes(problemSearch.toLowerCase());
-        const matchesDifficulty =
-          difficultyFilter === 'All' || problem.difficulty === difficultyFilter;
-        const matchesStatus = statusFilter === 'All' || problem.status === statusFilter;
-        const matchesTopic = topicFilter === 'All' || problem.topic === topicFilter;
+  const updateProblemField = (field, value) => {
+    setProblemForm((prev) => ({
+      ...prev,
+      [field]: value
+    }));
+  };
 
-        return matchesSearch && matchesDifficulty && matchesStatus && matchesTopic;
-      }),
-    [problems, problemSearch, difficultyFilter, statusFilter, topicFilter]
-  );
+  const addProblemTestCase = () => {
+    setProblemForm((prev) => ({
+      ...prev,
+      testCases: [...prev.testCases, { input: '', output: '', isHidden: true }]
+    }));
+  };
 
-  const uniqueTopics = useMemo(
-    () => [...new Set(problems.map((p) => p.topic).filter(Boolean))].sort(),
-    [problems]
-  );
+  const handleProblemTestCaseChange = (index, field, value) => {
+    setProblemForm((prev) => ({
+      ...prev,
+      testCases: prev.testCases.map((testCase, testCaseIndex) =>
+        testCaseIndex === index ? { ...testCase, [field]: value } : testCase
+      )
+    }));
+  };
+
+  const removeProblemTestCase = (index) => {
+    setProblemForm((prev) => ({
+      ...prev,
+      testCases: prev.testCases.filter((_, testCaseIndex) => testCaseIndex !== index)
+    }));
+  };
 
   const filteredUsers = useMemo(
     () =>
@@ -634,6 +951,29 @@ function Admin() {
       }),
     [contests, contestSearch, contestStatusFilter, contestDifficultyFilter]
   );
+
+  const filteredContestProblemOptions = useMemo(() => {
+    const searchValue = contestProblemSearch.trim().toLowerCase();
+    if (!searchValue) return allProblemOptions;
+
+    return allProblemOptions.filter((problem) => {
+      return (
+        problem.title.toLowerCase().includes(searchValue) ||
+        problem.topic.toLowerCase().includes(searchValue) ||
+        problem.difficulty.toLowerCase().includes(searchValue)
+      );
+    });
+  }, [allProblemOptions, contestProblemSearch]);
+
+  const topAttemptedProblems = useMemo(() => {
+    return [...allProblemOptions]
+      .sort((a, b) => b.submissions - a.submissions)
+      .slice(0, 5);
+  }, [allProblemOptions]);
+
+  const departmentData = stats.departmentData || [];
+  const submissionTrend = stats.submissionTrend || [];
+  const difficultyDistribution = stats.difficultyDistribution || [];
 
   const StatCard = ({ title, value, icon, color, subtitle }) => (
     <motion.div
@@ -774,7 +1114,7 @@ function Admin() {
               whileTap={{ scale: 0.95 }}
               onClick={() => {
                 setActiveTab('problems');
-                setShowAddProblemModal(true);
+                openCreateProblemModal();
               }}
               className="w-full bg-green-500 hover:bg-green-400 text-white font-semibold py-2 rounded-lg transition mb-2 text-sm flex items-center justify-center gap-2"
             >
@@ -873,9 +1213,6 @@ function Admin() {
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-bold">User Management</h2>
-                <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="bg-yellow-400 hover:bg-yellow-300 text-gray-950 font-semibold px-4 py-2 rounded-lg transition">
-                  Export
-                </motion.button>
               </div>
 
               <div className={`rounded-xl p-4 border transition-colors duration-300 ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
@@ -939,20 +1276,6 @@ function Admin() {
                     <option value="active">Active</option>
                     <option value="banned">Banned</option>
                   </select>
-
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={() => {
-                      setUserSearch('');
-                      setUserDeptFilter('All');
-                      setUserRoleFilter('All');
-                      setUserStatusFilter('All');
-                    }}
-                    className="bg-gray-500 hover:bg-gray-400 text-white font-semibold px-4 py-2 rounded-lg transition"
-                  >
-                    Clear Filters
-                  </motion.button>
                 </div>
 
                 <div className={`mt-3 text-sm transition ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
@@ -991,11 +1314,9 @@ function Admin() {
                         </td>
                         <td className="px-6 py-4">
                           <span className={`text-xs font-semibold px-2 py-1 rounded-full ${
-                            user.role === 'teacher'
-                              ? 'bg-purple-400/10 text-purple-400'
-                              : user.role === 'admin'
-                                ? 'bg-red-400/10 text-red-400'
-                                : 'bg-blue-400/10 text-blue-400'
+                            user.role === 'admin'
+                              ? 'bg-red-400/10 text-red-400'
+                              : 'bg-blue-400/10 text-blue-400'
                           }`}>
                             {user.role}
                           </span>
@@ -1008,8 +1329,10 @@ function Admin() {
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex gap-2">
-                            <button className="text-blue-400 hover:text-blue-300 text-sm">Edit</button>
-                            <button className="text-red-400 hover:text-red-300 text-sm">
+                            <button
+                              onClick={() => handleUserStatusToggle(user)}
+                              className={`${user.status === 'banned' ? 'text-green-400 hover:text-green-300' : 'text-red-400 hover:text-red-300'} text-sm`}
+                            >
                               {user.status === 'banned' ? 'Unban' : 'Ban'}
                             </button>
                           </div>
@@ -1029,7 +1352,7 @@ function Admin() {
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
-                  onClick={() => setShowAddProblemModal(true)}
+                  onClick={openCreateProblemModal}
                   className="bg-green-500 hover:bg-green-400 text-white font-semibold px-4 py-2 rounded-lg transition flex items-center gap-2"
                 >
                   <span>➕</span> Add New Problem
@@ -1062,10 +1385,9 @@ function Admin() {
                     }`}
                   >
                     <option value="All">All Difficulties</option>
-                    <option value="Easy">Easy</option>
-                    <option value="Medium">Medium</option>
-                    <option value="Hard">Hard</option>
-                    <option value="Expert">Expert</option>
+                    {problemDifficultyOptions.map((difficulty) => (
+                      <option key={difficulty} value={difficulty}>{difficulty}</option>
+                    ))}
                   </select>
 
                   <select
@@ -1092,28 +1414,14 @@ function Admin() {
                     }`}
                   >
                     <option value="All">All Topics</option>
-                    {uniqueTopics.map((topic) => (
+                    {problemCategories.map((topic) => (
                       <option key={topic} value={topic}>{topic}</option>
                     ))}
                   </select>
-
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={() => {
-                      setProblemSearch('');
-                      setDifficultyFilter('All');
-                      setStatusFilter('All');
-                      setTopicFilter('All');
-                    }}
-                    className="bg-gray-500 hover:bg-gray-400 text-white font-semibold px-4 py-2 rounded-lg transition"
-                  >
-                    Clear Filters
-                  </motion.button>
                 </div>
 
                 <div className={`mt-3 text-sm transition ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                  Showing {filteredProblems.length} of {problems.length} problems
+                  Showing {problems.length} of {problemPagination.total} problems
                 </div>
               </div>
 
@@ -1131,7 +1439,7 @@ function Admin() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredProblems.map((problem) => (
+                    {problems.map((problem) => (
                       <tr key={problem.id} className={`border-b last:border-0 transition-colors duration-300 ${isDark ? 'border-gray-800 hover:bg-gray-800/50' : 'border-gray-200 hover:bg-gray-50'}`}>
                         <td className={`px-6 py-4 font-medium transition ${isDark ? 'text-white' : 'text-gray-900'}`}>{problem.title}</td>
                         <td className="px-6 py-4">
@@ -1157,14 +1465,57 @@ function Admin() {
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex gap-2">
-                            <button className="text-blue-400 hover:text-blue-300 text-sm">Edit</button>
-                            <button className="text-red-400 hover:text-red-300 text-sm">Delete</button>
+                            <button
+                              onClick={() => openEditProblemModal(problem.id)}
+                              className="text-blue-400 hover:text-blue-300 text-sm"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteProblem(problem.id)}
+                              disabled={problemDeleteLoadingId === problem.id}
+                              className="text-red-400 hover:text-red-300 text-sm disabled:opacity-50"
+                            >
+                              {problemDeleteLoadingId === problem.id ? 'Deleting...' : 'Delete'}
+                            </button>
                           </div>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={() => setProblemPage((prev) => Math.max(prev - 1, 1))}
+                  disabled={problemPagination.currentPage <= 1}
+                  className={`px-4 py-2 rounded-lg border transition ${
+                    isDark
+                      ? 'border-gray-700 text-gray-300 disabled:opacity-50'
+                      : 'border-gray-300 text-gray-700 disabled:opacity-50'
+                  }`}
+                >
+                  Previous
+                </button>
+
+                <span className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                  Page {problemPagination.currentPage} of {problemPagination.totalPages}
+                </span>
+
+                <button
+                  onClick={() =>
+                    setProblemPage((prev) => Math.min(prev + 1, problemPagination.totalPages))
+                  }
+                  disabled={problemPagination.currentPage >= problemPagination.totalPages}
+                  className={`px-4 py-2 rounded-lg border transition ${
+                    isDark
+                      ? 'border-gray-700 text-gray-300 disabled:opacity-50'
+                      : 'border-gray-300 text-gray-700 disabled:opacity-50'
+                  }`}
+                >
+                  Next
+                </button>
               </div>
             </div>
           )}
@@ -1218,19 +1569,6 @@ function Admin() {
                       <option key={language} value={language}>{language}</option>
                     ))}
                   </select>
-
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={() => {
-                      setSubmissionSearch('');
-                      setVerdictFilter('All');
-                      setLanguageFilter('All');
-                    }}
-                    className="bg-gray-500 hover:bg-gray-400 text-white font-semibold px-4 py-2 rounded-lg transition"
-                  >
-                    Clear Filters
-                  </motion.button>
                 </div>
 
                 <div className={`mt-3 text-sm transition ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
@@ -1248,7 +1586,6 @@ function Admin() {
                       <th className="text-left px-6 py-4">Language</th>
                       <th className="text-left px-6 py-4">Verdict</th>
                       <th className="text-left px-6 py-4">Time</th>
-                      <th className="text-left px-6 py-4">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1263,10 +1600,7 @@ function Admin() {
                             {sub.verdict}
                           </span>
                         </td>
-                        <td className={`px-6 py-4 text-sm transition ${isDark ? 'text-gray-500' : 'text-gray-600'}`}>{sub.time}</td>
-                        <td className="px-6 py-4">
-                          <button className="text-blue-400 hover:text-blue-300 text-sm">View Code</button>
-                        </td>
+                        <td className={`px-6 py-4 text-sm transition ${isDark ? 'text-gray-500' : 'text-gray-600'}`}>{formatSubmissionTime(sub.time)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1334,19 +1668,6 @@ function Admin() {
                       <option key={difficulty} value={difficulty}>{difficulty}</option>
                     ))}
                   </select>
-
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={() => {
-                      setContestSearch('');
-                      setContestStatusFilter('All');
-                      setContestDifficultyFilter('All');
-                    }}
-                    className="bg-gray-500 hover:bg-gray-400 text-white font-semibold px-4 py-2 rounded-lg transition"
-                  >
-                    Clear Filters
-                  </motion.button>
                 </div>
 
                 <div className={`mt-3 text-sm transition ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
@@ -1567,7 +1888,7 @@ function Admin() {
                         <div className="flex items-center gap-3">
                           <span className="text-yellow-400 font-bold w-6">{user.rank}</span>
                           <span className={`transition ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                            {user.displayName}
+                            {user.displayName || user.username}
                           </span>
                         </div>
                         <span className="text-yellow-400 font-medium">{user.rating} Rating</span>
@@ -1577,28 +1898,24 @@ function Admin() {
                 </div>
 
                 <div className={`rounded-xl p-6 border transition-colors duration-300 ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
-                  <h3 className={`font-semibold mb-4 transition ${isDark ? 'text-white' : 'text-gray-900'}`}>Most Attempted Problems</h3>
-                  <div className="space-y-3">
-                    {[
-                      { title: 'Two Sum', attempts: 1240, success: 68 },
-                      { title: 'Valid Parentheses', attempts: 1300, success: 72 },
-                      { title: 'Fibonacci (Memoization)', attempts: 1450, success: 85 },
-                      { title: 'Binary Search', attempts: 1100, success: 55 },
-                      { title: 'Reverse Linked List', attempts: 980, success: 52 }
-                    ].map((prob, idx) => (
-                      <div key={idx} className={`flex items-center justify-between py-2 border-b last:border-0 transition-colors duration-300 ${isDark ? 'border-gray-800' : 'border-gray-200'}`}>
-                        <div>
-                          <div className={`transition ${isDark ? 'text-white' : 'text-gray-900'}`}>{prob.title}</div>
-                          <div className={`text-sm transition ${isDark ? 'text-gray-500' : 'text-gray-600'}`}>{prob.attempts} attempts</div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-green-400 font-medium">{prob.success}%</div>
-                          <div className={`text-sm transition ${isDark ? 'text-gray-500' : 'text-gray-600'}`}>success rate</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+  <h3 className={`font-semibold mb-4 transition ${isDark ? 'text-white' : 'text-gray-900'}`}>Most Attempted Problems</h3>
+  <div className="space-y-3">
+    {topAttemptedProblems.map((prob, idx) => (
+      <div key={idx} className={`flex items-center justify-between py-2 border-b last:border-0 transition-colors duration-300 ${isDark ? 'border-gray-800' : 'border-gray-200'}`}>
+        <div>
+          <div className={`transition ${isDark ? 'text-white' : 'text-gray-900'}`}>{prob.title}</div>
+          <div className={`text-sm transition ${isDark ? 'text-gray-500' : 'text-gray-600'}`}>{prob.submissions} attempts</div>
+        </div>
+        <div className="text-right">
+          <div className="text-green-400 font-medium">{prob.acceptance}%</div>
+          <div className={`text-sm transition ${isDark ? 'text-gray-500' : 'text-gray-600'}`}>
+            success rate
+          </div>
+        </div>
+      </div>
+    ))}
+  </div>
+</div>
               </div>
             </div>
           )}
@@ -1606,57 +1923,207 @@ function Admin() {
       </div>
 
       {showAddProblemModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-900 p-6 rounded-xl w-96 shadow-xl">
-            <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">Add New Problem</h3>
-            <input
-              type="text"
-              placeholder="Problem Title"
-              value={newProblemInfo.title}
-              onChange={(e) => setNewProblemInfo((prev) => ({ ...prev, title: e.target.value }))}
-              className="w-full mb-2 px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-            />
-            <input
-              type="text"
-              placeholder="Topic"
-              value={newProblemInfo.topic}
-              onChange={(e) => setNewProblemInfo((prev) => ({ ...prev, topic: e.target.value }))}
-              className="w-full mb-2 px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-            />
-            <select
-              value={newProblemInfo.difficulty}
-              onChange={(e) => setNewProblemInfo((prev) => ({ ...prev, difficulty: e.target.value }))}
-              className="w-full mb-2 px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-            >
-              <option>Easy</option>
-              <option>Medium</option>
-              <option>Hard</option>
-            </select>
-            <div className="flex gap-2 mb-4">
-              <input
-                type="number"
-                placeholder="Submissions"
-                value={newProblemInfo.submissions}
-                onChange={(e) => setNewProblemInfo((prev) => ({ ...prev, submissions: Number(e.target.value) }))}
-                className="w-1/2 px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-              />
-              <input
-                type="number"
-                placeholder="Acceptance %"
-                value={newProblemInfo.acceptance}
-                onChange={(e) => setNewProblemInfo((prev) => ({ ...prev, acceptance: Number(e.target.value) }))}
-                className="w-1/2 px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-              />
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className={`w-full max-w-5xl rounded-2xl overflow-hidden shadow-2xl border ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
+            <div className={`px-6 py-4 border-b ${isDark ? 'border-gray-800' : 'border-gray-200'}`}>
+              <h3 className="text-xl font-bold">
+                {problemFormMode === 'edit' ? 'Edit Problem' : 'Create New Problem'}
+              </h3>
             </div>
-            <div className="flex justify-end gap-2">
+
+            <div className="p-6 max-h-[80vh] overflow-y-auto space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <input
+                  type="text"
+                  placeholder="Problem Title"
+                  value={problemForm.title}
+                  onChange={(e) => updateProblemField('title', e.target.value)}
+                  className={`w-full rounded-xl border px-4 py-3 ${isDark ? 'bg-gray-800 text-white border-gray-700' : 'bg-white text-gray-900 border-gray-300'}`}
+                />
+
+                <select
+                  value={problemForm.difficulty}
+                  onChange={(e) => updateProblemField('difficulty', e.target.value)}
+                  className={`w-full rounded-xl border px-4 py-3 ${isDark ? 'bg-gray-800 text-white border-gray-700' : 'bg-white text-gray-900 border-gray-300'}`}
+                >
+                  {problemDifficultyOptions.map((difficulty) => (
+                    <option key={difficulty} value={difficulty}>{difficulty}</option>
+                  ))}
+                </select>
+
+                <input
+                  type="text"
+                  placeholder="Category / Topic"
+                  value={problemForm.category}
+                  onChange={(e) => updateProblemField('category', e.target.value)}
+                  className={`w-full rounded-xl border px-4 py-3 ${isDark ? 'bg-gray-800 text-white border-gray-700' : 'bg-white text-gray-900 border-gray-300'}`}
+                />
+
+                <input
+                  type="text"
+                  placeholder="Tags (comma separated)"
+                  value={problemForm.tagsText}
+                  onChange={(e) => updateProblemField('tagsText', e.target.value)}
+                  className={`w-full rounded-xl border px-4 py-3 ${isDark ? 'bg-gray-800 text-white border-gray-700' : 'bg-white text-gray-900 border-gray-300'}`}
+                />
+              </div>
+
+              <textarea
+                rows={8}
+                placeholder="Problem Description"
+                value={problemForm.description}
+                onChange={(e) => updateProblemField('description', e.target.value)}
+                className={`w-full rounded-xl border px-4 py-3 ${isDark ? 'bg-gray-800 text-white border-gray-700' : 'bg-white text-gray-900 border-gray-300'}`}
+              />
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <textarea
+                  rows={5}
+                  placeholder="Input Format"
+                  value={problemForm.inputFormat}
+                  onChange={(e) => updateProblemField('inputFormat', e.target.value)}
+                  className={`w-full rounded-xl border px-4 py-3 ${isDark ? 'bg-gray-800 text-white border-gray-700' : 'bg-white text-gray-900 border-gray-300'}`}
+                />
+
+                <textarea
+                  rows={5}
+                  placeholder="Output Format"
+                  value={problemForm.outputFormat}
+                  onChange={(e) => updateProblemField('outputFormat', e.target.value)}
+                  className={`w-full rounded-xl border px-4 py-3 ${isDark ? 'bg-gray-800 text-white border-gray-700' : 'bg-white text-gray-900 border-gray-300'}`}
+                />
+
+                <textarea
+                  rows={5}
+                  placeholder="Constraints"
+                  value={problemForm.constraints}
+                  onChange={(e) => updateProblemField('constraints', e.target.value)}
+                  className={`w-full rounded-xl border px-4 py-3 ${isDark ? 'bg-gray-800 text-white border-gray-700' : 'bg-white text-gray-900 border-gray-300'}`}
+                />
+
+                <div className="grid grid-cols-2 gap-4">
+                  <input
+                    type="number"
+                    placeholder="Time Limit (ms)"
+                    value={problemForm.timeLimit}
+                    onChange={(e) => updateProblemField('timeLimit', e.target.value)}
+                    className={`w-full rounded-xl border px-4 py-3 ${isDark ? 'bg-gray-800 text-white border-gray-700' : 'bg-white text-gray-900 border-gray-300'}`}
+                  />
+
+                  <input
+                    type="number"
+                    placeholder="Memory Limit (MB)"
+                    value={problemForm.memoryLimit}
+                    onChange={(e) => updateProblemField('memoryLimit', e.target.value)}
+                    className={`w-full rounded-xl border px-4 py-3 ${isDark ? 'bg-gray-800 text-white border-gray-700' : 'bg-white text-gray-900 border-gray-300'}`}
+                  />
+
+                  <label className={`col-span-2 flex items-center gap-3 rounded-xl border px-4 py-3 ${isDark ? 'border-gray-700 text-white' : 'border-gray-300 text-gray-900'}`}>
+                    <input
+                      type="checkbox"
+                      checked={problemForm.isActive}
+                      onChange={(e) => updateProblemField('isActive', e.target.checked)}
+                    />
+                    Active problem
+                  </label>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <textarea
+                  rows={5}
+                  placeholder="Sample Input"
+                  value={problemForm.sampleInput}
+                  onChange={(e) => updateProblemField('sampleInput', e.target.value)}
+                  className={`w-full rounded-xl border px-4 py-3 ${isDark ? 'bg-gray-800 text-white border-gray-700' : 'bg-white text-gray-900 border-gray-300'}`}
+                />
+
+                <textarea
+                  rows={5}
+                  placeholder="Sample Output"
+                  value={problemForm.sampleOutput}
+                  onChange={(e) => updateProblemField('sampleOutput', e.target.value)}
+                  className={`w-full rounded-xl border px-4 py-3 ${isDark ? 'bg-gray-800 text-white border-gray-700' : 'bg-white text-gray-900 border-gray-300'}`}
+                />
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-lg font-semibold">Test Cases</h4>
+                  <button
+                    onClick={addProblemTestCase}
+                    className="px-4 py-2 rounded-lg bg-yellow-400 text-gray-950 font-semibold"
+                  >
+                    + Add Test Case
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  {problemForm.testCases.map((testCase, index) => (
+                    <div
+                      key={index}
+                      className={`rounded-xl border p-4 ${isDark ? 'border-gray-700 bg-gray-800/60' : 'border-gray-200 bg-gray-50'}`}
+                    >
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="font-medium">Test Case #{index + 1}</div>
+                        <div className="flex items-center gap-4">
+                          <label className="flex items-center gap-2 text-sm">
+                            <input
+                              type="checkbox"
+                              checked={testCase.isHidden}
+                              onChange={(e) => handleProblemTestCaseChange(index, 'isHidden', e.target.checked)}
+                            />
+                            Hidden
+                          </label>
+                          <button
+                            onClick={() => removeProblemTestCase(index)}
+                            disabled={problemForm.testCases.length <= 1}
+                            className="text-red-400 hover:text-red-300 text-sm disabled:opacity-50"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <textarea
+                          rows={5}
+                          value={testCase.input}
+                          onChange={(e) => handleProblemTestCaseChange(index, 'input', e.target.value)}
+                          className={`w-full rounded-xl border px-4 py-3 font-mono ${isDark ? 'bg-gray-800 text-white border-gray-700' : 'bg-white text-gray-900 border-gray-300'}`}
+                        />
+                        <textarea
+                          rows={5}
+                          value={testCase.output}
+                          onChange={(e) => handleProblemTestCaseChange(index, 'output', e.target.value)}
+                          className={`w-full rounded-xl border px-4 py-3 font-mono ${isDark ? 'bg-gray-800 text-white border-gray-700' : 'bg-white text-gray-900 border-gray-300'}`}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className={`px-6 py-4 border-t flex justify-end gap-3 ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
               <button
-                onClick={() => setShowAddProblemModal(false)}
-                className="px-4 py-2 rounded-lg text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-700"
+                onClick={resetProblemModal}
+                className={`px-5 py-2.5 rounded-xl border ${isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-gray-300 text-gray-700 hover:bg-gray-100'}`}
               >
                 Cancel
               </button>
-              <button onClick={handleSaveProblem} className="px-4 py-2 rounded-lg bg-green-500 text-white">
-                Save
+              <button
+                onClick={handleSaveProblem}
+                disabled={problemActionLoading}
+                className="px-5 py-2.5 rounded-xl bg-green-500 text-white hover:bg-green-400 transition disabled:opacity-60"
+              >
+                {problemActionLoading
+                  ? problemFormMode === 'edit'
+                    ? 'Updating...'
+                    : 'Saving...'
+                  : problemFormMode === 'edit'
+                    ? 'Update Problem'
+                    : 'Create Problem'}
               </button>
             </div>
           </div>
@@ -1731,9 +2198,23 @@ function Admin() {
             />
 
             <div className="mb-4">
-              <h4 className="font-semibold mb-3 text-gray-900 dark:text-white">Select Problems</h4>
+              <div className="flex items-center justify-between gap-4 mb-3">
+                <h4 className="font-semibold text-gray-900 dark:text-white">Select Problems</h4>
+                <input
+                  type="text"
+                  value={contestProblemSearch}
+                  onChange={(e) => setContestProblemSearch(e.target.value)}
+                  placeholder="Search problems"
+                  className="w-full max-w-xs px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                />
+              </div>
+
+              <div className="mb-3 text-sm text-gray-600 dark:text-gray-400">
+                Selected {contestForm.problemIds.length} problem{contestForm.problemIds.length !== 1 ? 's' : ''}
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-72 overflow-y-auto pr-1">
-                {problems.map((problem) => (
+                {filteredContestProblemOptions.map((problem) => (
                   <label
                     key={problem.id}
                     className="flex items-start gap-3 p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white"
@@ -1747,7 +2228,7 @@ function Admin() {
                     <div>
                       <div className="font-medium">{problem.title}</div>
                       <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                        {problem.difficulty} • {problem.topic}
+                        {problem.difficulty} • {problem.topic} • {problem.submissions} submissions
                       </div>
                     </div>
                   </label>
