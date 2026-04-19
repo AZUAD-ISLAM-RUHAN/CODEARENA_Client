@@ -68,6 +68,23 @@ function ContestLive() {
     });
   };
 
+  const getProblemId = (problem) => {
+    if (!problem) return null;
+    if (typeof problem === 'object') return problem._id || problem.id || null;
+    return problem;
+  };
+
+  const getProblemTitle = (problem, index) => {
+    if (!problem) return `Problem ${index + 1}`;
+    if (typeof problem === 'object') return problem.title || `Problem ${index + 1}`;
+    return `Problem ${index + 1}`;
+  };
+
+  const getProblemDifficulty = (problem) => {
+    if (!problem || typeof problem !== 'object') return 'Unknown';
+    return problem.difficulty || 'Unknown';
+  };
+
   const fetchContest = async () => {
     try {
       setLoading(true);
@@ -260,108 +277,166 @@ function ContestLive() {
             <p className={isDark ? 'text-gray-400' : 'text-gray-600'}>No problems found for this contest.</p>
           ) : (
             <div className="space-y-3">
-              {problemList.map((problem, index) => (
-                <div key={problem._id || index} className={`flex items-center justify-between p-4 rounded-lg ${isDark ? 'bg-gray-800' : 'bg-gray-50'}`}>
-                  <div className="flex items-center gap-3">
-                    <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                      problem.difficulty === 'Easy'
-                        ? 'bg-green-500/20 text-green-400'
-                        : problem.difficulty === 'Medium'
-                        ? 'bg-yellow-500/20 text-yellow-400'
-                        : 'bg-red-500/20 text-red-400'
-                    }`}>
-                      {problem.difficulty}
-                    </span>
-                    <span className="font-medium">{problem.title}</span>
-                  </div>
+              {problemList.map((problem, index) => {
+                const problemId = getProblemId(problem);
 
-                  <button
-                    onClick={() => navigate(`/problem/${problem._id}?contestId=${contest._id}`)}
-                    className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
-                  >
-                    Solve
-                  </button>
-                </div>
-              ))}
+                return (
+                  <div key={problemId || index} className={`flex items-center justify-between p-4 rounded-lg ${isDark ? 'bg-gray-800' : 'bg-gray-50'}`}>
+                    <div className="flex items-center gap-3">
+                      <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                        getProblemDifficulty(problem) === 'Easy'
+                          ? 'bg-green-500/20 text-green-400'
+                          : getProblemDifficulty(problem) === 'Medium'
+                          ? 'bg-yellow-500/20 text-yellow-400'
+                          : 'bg-red-500/20 text-red-400'
+                      }`}>
+                        {getProblemDifficulty(problem)}
+                      </span>
+                      <span className="font-medium">{getProblemTitle(problem, index)}</span>
+                    </div>
+
+                    <button
+                      onClick={() => navigate(`/problem/${problemId}?contestId=${contest._id}`)}
+                      className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+                    >
+                      Solve
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
       )}
 
       {uiStatus === 'ended' && (
-        <div className={`mt-6 p-6 rounded-2xl border ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-lg font-semibold">Contest Leaderboard</h3>
-              <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                Final standings with rating changes
-              </p>
+        <div className="mt-6 space-y-6">
+          <div className={`p-6 rounded-2xl border ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-semibold">Contest Problems</h3>
+                <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                  You can view the archived contest problems and your own submissions.
+                </p>
+              </div>
+
+              <span className="text-xs px-2 py-1 rounded-full bg-blue-500/10 text-blue-400">
+                Read Only
+              </span>
             </div>
 
-            <button
-              onClick={fetchLeaderboard}
-              disabled={leaderboardLoading}
-              className="px-4 py-2 bg-yellow-400 hover:bg-yellow-300 text-gray-950 rounded-lg font-semibold disabled:opacity-50"
-            >
-              {leaderboardLoading ? 'Refreshing...' : 'Refresh'}
-            </button>
+            {problemList.length === 0 ? (
+              <p className={isDark ? 'text-gray-400' : 'text-gray-600'}>No problems found for this contest.</p>
+            ) : (
+              <div className="space-y-3">
+                {problemList.map((problem, index) => {
+                  const problemId = getProblemId(problem);
+
+                  return (
+                    <div
+                      key={problemId || index}
+                      className={`flex items-center justify-between p-4 rounded-lg ${isDark ? 'bg-gray-800' : 'bg-gray-50'}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                          getProblemDifficulty(problem) === 'Easy'
+                            ? 'bg-green-500/20 text-green-400'
+                            : getProblemDifficulty(problem) === 'Medium'
+                            ? 'bg-yellow-500/20 text-yellow-400'
+                            : 'bg-red-500/20 text-red-400'
+                        }`}>
+                          {getProblemDifficulty(problem)}
+                        </span>
+                        <span className="font-medium">{getProblemTitle(problem, index)}</span>
+                      </div>
+
+                      <button
+                        onClick={() => navigate(`/problem/${problemId}?contestId=${contest._id}`)}
+                        className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+                      >
+                        View Problem
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
-          {leaderboard.length === 0 ? (
-            <p className={isDark ? 'text-gray-400' : 'text-gray-600'}>No leaderboard data available yet.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-left text-sm">
-                <thead>
-                  <tr className={`border-b ${isDark ? 'border-gray-800 text-gray-400' : 'border-gray-200 text-gray-600'}`}>
-                    <th className="py-3 px-4">Rank</th>
-                    <th className="py-3 px-4">User</th>
-                    <th className="py-3 px-4">Solved</th>
-                    <th className="py-3 px-4">Total Time</th>
-                    <th className="py-3 px-4">Submissions</th>
-                    <th className="py-3 px-4">Old Rating</th>
-                    <th className="py-3 px-4">New Rating</th>
-                    <th className="py-3 px-4">Change</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {leaderboard.map((row) => {
-                    const rowUserId =
-                      row?.userId && typeof row.userId === 'object'
-                        ? row.userId._id || row.userId.id
-                        : row?.userId;
+          <div className={`p-6 rounded-2xl border ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-semibold">Contest Leaderboard</h3>
+                <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                  Final standings with rating changes
+                </p>
+              </div>
 
-                    const name =
-                      row?.userId && typeof row.userId === 'object'
-                        ? `${row.userId.firstName || ''} ${row.userId.lastName || ''}`.trim() || row.userId.username
-                        : 'Unknown';
-
-                    const isMe = String(rowUserId) === String(currentUserId);
-
-                    return (
-                      <tr
-                        key={`${row.rank}-${rowUserId}`}
-                        className={`border-b ${isDark ? 'border-gray-800' : 'border-gray-200'} ${
-                          isMe ? 'bg-yellow-400/10' : isDark ? 'hover:bg-gray-800' : 'hover:bg-gray-50'
-                        }`}
-                      >
-                        <td className="py-3 px-4 font-semibold">#{row.rank}</td>
-                        <td className="py-3 px-4 font-medium">{name}</td>
-                        <td className="py-3 px-4 text-green-400">{row.solvedProblems || 0}</td>
-                        <td className="py-3 px-4">{formatDuration(row.totalTime || 0)}</td>
-                        <td className="py-3 px-4">{row.submissions || 0}</td>
-                        <td className="py-3 px-4">{row.oldRating || 1200}</td>
-                        <td className="py-3 px-4">{row.newRating || 1200}</td>
-                        <td className={`py-3 px-4 font-semibold ${(row.ratingChange || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                          {(row.ratingChange || 0) >= 0 ? '+' : ''}{row.ratingChange || 0}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <button
+                onClick={fetchLeaderboard}
+                disabled={leaderboardLoading}
+                className="px-4 py-2 bg-yellow-400 hover:bg-yellow-300 text-gray-950 rounded-lg font-semibold disabled:opacity-50"
+              >
+                {leaderboardLoading ? 'Refreshing...' : 'Refresh'}
+              </button>
             </div>
-          )}
+
+            {leaderboard.length === 0 ? (
+              <p className={isDark ? 'text-gray-400' : 'text-gray-600'}>No leaderboard data available yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-left text-sm">
+                  <thead>
+                    <tr className={`border-b ${isDark ? 'border-gray-800 text-gray-400' : 'border-gray-200 text-gray-600'}`}>
+                      <th className="py-3 px-4">Rank</th>
+                      <th className="py-3 px-4">User</th>
+                      <th className="py-3 px-4">Solved</th>
+                      <th className="py-3 px-4">Total Time</th>
+                      <th className="py-3 px-4">Submissions</th>
+                      <th className="py-3 px-4">Old Rating</th>
+                      <th className="py-3 px-4">New Rating</th>
+                      <th className="py-3 px-4">Change</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {leaderboard.map((row) => {
+                      const rowUserId =
+                        row?.userId && typeof row.userId === 'object'
+                          ? row.userId._id || row.userId.id
+                          : row?.userId;
+
+                      const name =
+                        row?.userId && typeof row.userId === 'object'
+                          ? `${row.userId.firstName || ''} ${row.userId.lastName || ''}`.trim() || row.userId.username
+                          : 'Unknown';
+
+                      const isMe = String(rowUserId) === String(currentUserId);
+
+                      return (
+                        <tr
+                          key={`${row.rank}-${rowUserId}`}
+                          className={`border-b ${isDark ? 'border-gray-800' : 'border-gray-200'} ${
+                            isMe ? 'bg-yellow-400/10' : isDark ? 'hover:bg-gray-800' : 'hover:bg-gray-50'
+                          }`}
+                        >
+                          <td className="py-3 px-4 font-semibold">#{row.rank}</td>
+                          <td className="py-3 px-4 font-medium">{name}</td>
+                          <td className="py-3 px-4 text-green-400">{row.solvedProblems || 0}</td>
+                          <td className="py-3 px-4">{formatDuration(row.totalTime || 0)}</td>
+                          <td className="py-3 px-4">{row.submissions || 0}</td>
+                          <td className="py-3 px-4">{row.oldRating || 1200}</td>
+                          <td className="py-3 px-4">{row.newRating || 1200}</td>
+                          <td className={`py-3 px-4 font-semibold ${(row.ratingChange || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {(row.ratingChange || 0) >= 0 ? '+' : ''}{row.ratingChange || 0}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

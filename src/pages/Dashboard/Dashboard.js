@@ -156,16 +156,21 @@ function Dashboard() {
     userData?.streak ??
     0;
 
+  const resolvedRating =
+    userData?.rating ??
+    dashboardData?.rating ??
+    0;
+
   // Dynamic stats based on real user data
   const stats = userData ? [
     { label: 'XP Points', value: userData.experience?.toString() || '0', icon: '⚡', color: 'text-yellow-400' },
     { label: 'Level', value: userData.level?.toString() || '1', icon: '🏆', color: 'text-purple-400' },
-    { label: 'Streak', value: `${resolvedCurrentStreak} Days`, icon: '🔥', color: 'text-orange-400' },
+    { label: 'Rating', value: resolvedRating.toString(), icon: '⭐', color: 'text-orange-400' },
     { label: 'Problems Solved', value: (userData.solvedProblems?.length || 0).toString(), icon: '✅', color: 'text-green-400' },
   ] : [
     { label: 'XP Points', value: '0', icon: '⚡', color: 'text-yellow-400' },
     { label: 'Level', value: '1', icon: '🏆', color: 'text-purple-400' },
-    { label: 'Streak', value: '0 Days', icon: '🔥', color: 'text-orange-400' },
+    { label: 'Rating', value: '0', icon: '⭐', color: 'text-orange-400' },
     { label: 'Problems Solved', value: '0', icon: '✅', color: 'text-green-400' },
   ];
 

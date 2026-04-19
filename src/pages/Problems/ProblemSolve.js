@@ -33,6 +33,7 @@ function ProblemSolve() {
   const [newLevel, setNewLevel] = useState(1);
   const [submissionHistory, setSubmissionHistory] = useState([]);
   const [submissionHistoryLoading, setSubmissionHistoryLoading] = useState(false);
+  const [expandedSubmissionId, setExpandedSubmissionId] = useState(null);
 
   const [user, setUser] = useState(() => {
     try {
@@ -115,6 +116,12 @@ function ProblemSolve() {
     } catch (error) {
       return dateValue;
     }
+  };
+
+  const isContestArchived = (contestData) => {
+    if (!contestData) return false;
+    const status = String(contestData.status || '').toLowerCase();
+    return status === 'completed' || status === 'ended';
   };
 
   const buildTestCasesFromResults = (results = []) => {
@@ -302,6 +309,15 @@ function ProblemSolve() {
         return;
       }
 
+      if (contestInfo && isContestArchived(contestInfo)) {
+        setOutput({
+          status: 'error',
+          message: 'This contest has already ended. You can view the problem and your own submissions, but contest submission is closed.'
+        });
+        setIsRunning(false);
+        return;
+      }
+
       const previousLevel = user?.level || 1;
 
       const submitResponse = await fetch(`${API_BASE}/submissions`, {
@@ -391,6 +407,12 @@ function ProblemSolve() {
     setCode(getStarterCode(newLang));
   };
 
+  const handleLoadSubmissionCode = (submission) => {
+    setLanguage(submission.language || 'javascript');
+    setCode(submission.code || '');
+    setIsFullScreen(false);
+  };
+
   if (!problem) {
     return (
       <div className={`min-h-screen flex items-center justify-center ${isDark ? 'bg-gray-950 text-white' : 'bg-white text-gray-900'}`}>
@@ -416,6 +438,8 @@ function ProblemSolve() {
     );
   }
 
+  const contestArchived = isContestArchived(contestInfo);
+
   return (
     <div className={`h-screen flex flex-col overflow-hidden transition-colors duration-300 ${isDark ? 'bg-gray-950 text-white' : 'bg-white text-gray-900'}`}>
       <LevelUpModal isOpen={showLevelUp} level={newLevel} onClose={() => setShowLevelUp(false)} />
@@ -437,8 +461,12 @@ function ProblemSolve() {
               </span>
             )}
             {contestInfo && (
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full text-blue-400 bg-blue-400/10">
-                Contest Mode
+              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                contestArchived
+                  ? 'text-blue-400 bg-blue-400/10'
+                  : 'text-blue-400 bg-blue-400/10'
+              }`}>
+                {contestArchived ? 'Contest Archive' : 'Contest Mode'}
               </span>
             )}
           </div>
@@ -505,9 +533,13 @@ function ProblemSolve() {
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
                 {contestInfo && (
                   <div className={`rounded-lg p-4 border ${isDark ? 'bg-blue-500/10 border-blue-500/20' : 'bg-blue-50 border-blue-200'}`}>
-                    <div className="text-sm font-semibold text-blue-400">Contest: {contestInfo.title}</div>
+                    <div className="text-sm font-semibold text-blue-400">
+                      Contest: {contestInfo.title}
+                    </div>
                     <div className={`text-xs mt-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                      This submission will be counted inside the contest.
+                      {contestArchived
+                        ? 'This contest has ended. You can view the problem and your own contest submissions here.'
+                        : 'This submission will be counted inside the contest.'}
                     </div>
                   </div>
                 )}
@@ -580,52 +612,93 @@ function ProblemSolve() {
                     No submissions yet for this problem.
                   </div>
                 ) : (
-                  submissionHistory.map((submission) => (
-                    <div
-                      key={submission._id}
-                      className={`rounded-lg p-4 border ${
-                        submission.status === 'accepted'
-                          ? 'text-green-400 bg-green-400/10 border-green-700'
-                          : submission.status === 'wrong_answer'
-                          ? 'text-red-400 bg-red-400/10 border-red-700'
-                          : submission.status === 'time_limit_exceeded'
-                          ? 'text-orange-400 bg-orange-400/10 border-orange-700'
-                          : submission.status === 'runtime_error'
-                          ? 'text-pink-400 bg-pink-400/10 border-pink-700'
-                          : submission.status === 'compilation_error'
-                          ? 'text-yellow-400 bg-yellow-400/10 border-yellow-700'
-                          : 'text-blue-400 bg-blue-400/10 border-blue-700'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="font-semibold text-sm">
-                          {getFriendlyVerdict(submission.status, submission.errorMessage)}
+                  submissionHistory.map((submission) => {
+                    const isExpanded = expandedSubmissionId === submission._id;
+
+                    return (
+                      <div
+                        key={submission._id}
+                        className={`rounded-lg p-4 border ${
+                          submission.status === 'accepted'
+                            ? 'text-green-400 bg-green-400/10 border-green-700'
+                            : submission.status === 'wrong_answer'
+                            ? 'text-red-400 bg-red-400/10 border-red-700'
+                            : submission.status === 'time_limit_exceeded'
+                            ? 'text-orange-400 bg-orange-400/10 border-orange-700'
+                            : submission.status === 'runtime_error'
+                            ? 'text-pink-400 bg-pink-400/10 border-pink-700'
+                            : submission.status === 'compilation_error'
+                            ? 'text-yellow-400 bg-yellow-400/10 border-yellow-700'
+                            : 'text-blue-400 bg-blue-400/10 border-blue-700'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <div className="font-semibold text-sm">
+                              {getFriendlyVerdict(submission.status, submission.errorMessage)}
+                            </div>
+                            <div className="mt-1 text-[10px] opacity-80">
+                              {formatSubmissionTime(submission.submittedAt)}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 flex-wrap justify-end">
+                            <button
+                              onClick={() => setExpandedSubmissionId(isExpanded ? null : submission._id)}
+                              className={`px-2 py-1 rounded text-[10px] font-semibold transition ${
+                                isDark
+                                  ? 'bg-gray-800 text-white hover:bg-gray-700'
+                                  : 'bg-white text-gray-900 hover:bg-gray-100'
+                              }`}
+                            >
+                              {isExpanded ? 'Hide Code' : 'View Code'}
+                            </button>
+
+                            <button
+                              onClick={() => handleLoadSubmissionCode(submission)}
+                              className="px-2 py-1 rounded text-[10px] font-semibold transition bg-yellow-400 text-gray-950 hover:bg-yellow-300"
+                            >
+                              Load in Editor
+                            </button>
+                          </div>
                         </div>
-                        <div className="text-[10px] opacity-80">{formatSubmissionTime(submission.submittedAt)}</div>
+
+                        <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] opacity-90">
+                          <div>Language: {submission.language}</div>
+                          <div>Passed: {submission.testCasesPassed ?? 0}/{submission.totalTestCases ?? 0}</div>
+                          <div>Time: {submission.executionTime ?? 0} ms</div>
+                          <div>Memory: {submission.memoryUsed ?? 0} KB</div>
+                        </div>
+
+                        {submission.failedTestCase && (
+                          <div className="mt-3 text-[11px] opacity-90">
+                            <div>Failed Case #{submission.failedTestCase.id}</div>
+                            <div className="mt-1">Expected: {submission.failedTestCase.expected}</div>
+                            <div>Got: {submission.failedTestCase.actual}</div>
+                          </div>
+                        )}
+
+                        {submission.errorMessage && (
+                          <div className="mt-3 text-[11px] whitespace-pre-wrap opacity-90">
+                            {submission.errorMessage}
+                          </div>
+                        )}
+
+                        {isExpanded && (
+                          <div className={`mt-3 rounded-lg border overflow-hidden ${isDark ? 'border-gray-800 bg-gray-950' : 'border-gray-300 bg-white'}`}>
+                            <div className={`px-3 py-2 text-[10px] font-semibold border-b ${isDark ? 'border-gray-800 text-gray-400 bg-gray-900' : 'border-gray-300 text-gray-600 bg-gray-100'}`}>
+                              Submitted Code
+                            </div>
+                            <div className="max-h-72 overflow-auto">
+                              <pre className={`p-3 text-xs whitespace-pre font-mono ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>
+                                {submission.code || '// No code found'}
+                              </pre>
+                            </div>
+                          </div>
+                        )}
                       </div>
-
-                      <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] opacity-90">
-                        <div>Language: {submission.language}</div>
-                        <div>Passed: {submission.testCasesPassed ?? 0}/{submission.totalTestCases ?? 0}</div>
-                        <div>Time: {submission.executionTime ?? 0} ms</div>
-                        <div>Memory: {submission.memoryUsed ?? 0} KB</div>
-                      </div>
-
-                      {submission.failedTestCase && (
-                        <div className="mt-3 text-[11px] opacity-90">
-                          <div>Failed Case #{submission.failedTestCase.id}</div>
-                          <div className="mt-1">Expected: {submission.failedTestCase.expected}</div>
-                          <div>Got: {submission.failedTestCase.actual}</div>
-                        </div>
-                      )}
-
-                      {submission.errorMessage && (
-                        <div className="mt-3 text-[11px] whitespace-pre-wrap opacity-90">
-                          {submission.errorMessage}
-                        </div>
-                      )}
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </motion.div>
             )}
@@ -646,10 +719,16 @@ function ProblemSolve() {
               </button>
               <button
                 onClick={handleSubmit}
-                disabled={isRunning}
-                className="bg-green-600 hover:bg-green-500 text-white font-medium px-4 py-1.5 rounded-lg transition text-xs disabled:opacity-50"
+                disabled={isRunning || (contestInfo && contestArchived)}
+                className="bg-green-600 hover:bg-green-500 text-white font-medium px-4 py-1.5 rounded-lg transition text-xs disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isRunning ? 'Submitting...' : contestId ? '🏆 Submit in Contest' : '✅ Submit'}
+                {isRunning
+                  ? 'Submitting...'
+                  : contestInfo && contestArchived
+                  ? 'Contest Ended'
+                  : contestId
+                  ? '🏆 Submit in Contest'
+                  : '✅ Submit'}
               </button>
             </div>
           </div>
