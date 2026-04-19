@@ -342,19 +342,22 @@ function Profile() {
     ];
   }, [recentSubmissions]);
 
-  const heatmapWeeks = useMemo(() => {
+  const heatmapCells = useMemo(() => {
     const countMap = new Map();
+
     heatmapData.forEach((item) => {
-      countMap.set(item.date, item.count);
+      if (!item?.date) return;
+      countMap.set(item.date, Number(item.count) || 0);
     });
 
-    const totalDays = 84;
-    const cells = [];
+    const totalDays = 168;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
+    const cells = [];
     for (let i = totalDays - 1; i >= 0; i -= 1) {
-      const date = new Date();
-      date.setHours(0, 0, 0, 0);
-      date.setDate(date.getDate() - i);
+      const date = new Date(today);
+      date.setDate(today.getDate() - i);
 
       const key = date.toISOString().slice(0, 10);
       cells.push({
@@ -363,40 +366,136 @@ function Profile() {
       });
     }
 
+    return cells;
+  }, [heatmapData]);
+
+  const heatmapWeeks = useMemo(() => {
     const weeks = [];
-    for (let i = 0; i < cells.length; i += 7) {
-      weeks.push(cells.slice(i, i + 7));
-    }
+    let currentWeek = new Array(7).fill(null);
+
+    heatmapCells.forEach((cell, index) => {
+      const dayIndex = new Date(cell.date).getDay();
+      currentWeek[dayIndex] = cell;
+
+      const isEndOfWeek = dayIndex === 6;
+      const isLastCell = index === heatmapCells.length - 1;
+
+      if (isEndOfWeek || isLastCell) {
+        weeks.push(currentWeek);
+        currentWeek = new Array(7).fill(null);
+      }
+    });
 
     return weeks;
-  }, [heatmapData]);
+  }, [heatmapCells]);
 
   const monthLabels = useMemo(() => {
     let lastMonth = '';
+
     return heatmapWeeks.map((week) => {
-      const first = week[0];
-      if (!first) return '';
-      const month = new Date(first.date).toLocaleDateString('en-US', { month: 'short' });
+      const firstFilledCell = week.find(Boolean);
+      if (!firstFilledCell) return '';
+
+      const month = new Date(firstFilledCell.date).toLocaleDateString('en-US', {
+        month: 'short'
+      });
+
       if (month === lastMonth) return '';
+
       lastMonth = month;
       return month;
     });
   }, [heatmapWeeks]);
 
+  const heatmapStats = useMemo(() => {
+    const activeCells = heatmapCells.filter((cell) => cell.count > 0);
+    const totalContributions = heatmapCells.reduce((sum, cell) => sum + cell.count, 0);
+    const activeDays = activeCells.length;
+    const bestDay = activeCells.reduce((max, cell) => Math.max(max, cell.count), 0);
+
+    let longestStreak = 0;
+    let runningStreak = 0;
+
+    heatmapCells.forEach((cell) => {
+      if (cell.count > 0) {
+        runningStreak += 1;
+        longestStreak = Math.max(longestStreak, runningStreak);
+      } else {
+        runningStreak = 0;
+      }
+    });
+
+    let currentStreak = 0;
+    for (let i = heatmapCells.length - 1; i >= 0; i -= 1) {
+      if (heatmapCells[i].count > 0) {
+        currentStreak += 1;
+      } else {
+        break;
+      }
+    }
+
+    return {
+      totalContributions,
+      activeDays,
+      bestDay,
+      longestStreak,
+      currentStreak
+    };
+  }, [heatmapCells]);
+
+  const heatmapMaxCount = useMemo(() => {
+    return Math.max(1, ...heatmapCells.map((cell) => cell.count || 0));
+  }, [heatmapCells]);
+
+  const heatmapRangeText = useMemo(() => {
+    if (heatmapCells.length === 0) return 'Last 24 weeks';
+
+    const start = new Date(heatmapCells[0].date);
+    const end = new Date(heatmapCells[heatmapCells.length - 1].date);
+
+    return `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+  }, [heatmapCells]);
+
+  const getHeatmapLevel = (count) => {
+    if (count <= 0) return 0;
+
+    const ratio = count / heatmapMaxCount;
+    if (ratio <= 0.25) return 1;
+    if (ratio <= 0.5) return 2;
+    if (ratio <= 0.75) return 3;
+    return 4;
+  };
+
   const getHeatmapCellClass = (count) => {
-    if (count === 0) {
-      return isDark ? 'bg-gray-800 border border-gray-700' : 'bg-gray-200 border border-gray-300';
+    const level = getHeatmapLevel(count);
+
+    if (level === 0) {
+      return isDark
+        ? 'bg-gray-800 border border-gray-700 hover:bg-gray-700'
+        : 'bg-gray-100 border border-gray-200 hover:bg-gray-200';
     }
-    if (count === 1) {
-      return 'bg-green-200 border border-green-300';
+
+    if (level === 1) {
+      return isDark
+        ? 'bg-green-900 border border-green-800 hover:bg-green-800'
+        : 'bg-green-200 border border-green-300 hover:bg-green-300';
     }
-    if (count === 2) {
-      return 'bg-green-300 border border-green-400';
+
+    if (level === 2) {
+      return isDark
+        ? 'bg-green-700 border border-green-600 hover:bg-green-600'
+        : 'bg-green-300 border border-green-400 hover:bg-green-400';
     }
-    if (count === 3) {
-      return 'bg-green-400 border border-green-500';
+
+    if (level === 3) {
+      return isDark
+        ? 'bg-green-600 border border-green-500 hover:bg-green-500'
+        : 'bg-green-400 border border-green-500 hover:bg-green-500';
     }
-    return 'bg-green-500 border border-green-600';
+
+    return isDark
+      ? 'bg-green-400 border border-green-300 hover:bg-green-300'
+      : 'bg-green-500 border border-green-600 hover:bg-green-600';
   };
 
   const getVerdictClass = (verdict) => {
@@ -1038,55 +1137,105 @@ function Profile() {
                   </div>
 
                   <div className={`border rounded-xl p-6 ${cardClass}`}>
-                    <h3 className="text-lg font-semibold mb-4">🔥 Submission Heatmap</h3>
+                    <div className="flex items-start justify-between gap-4 mb-5">
+                      <div>
+                        <h3 className="text-lg font-semibold">🔥 Submission Heatmap</h3>
+                        <p className={`text-sm mt-1 ${mutedTextClass}`}>
+                          Real submission activity synced from your database
+                        </p>
+                      </div>
+
+                      <div className={`text-right text-sm ${mutedTextClass}`}>
+                        <div>{heatmapRangeText}</div>
+                        <div className="text-yellow-400 font-medium mt-1">
+                          {heatmapStats.totalContributions} total submissions
+                        </div>
+                      </div>
+                    </div>
 
                     {heatmapWeeks.length > 0 ? (
-                      <div className="overflow-x-auto">
-                        <div className="min-w-max">
-                          <div className="flex gap-1 ml-10 mb-2 text-xs text-gray-500">
-                            {monthLabels.map((label, index) => (
-                              <div key={`${label}-${index}`} className="w-5 text-center">
-                                {label}
-                              </div>
-                            ))}
+                      <div className="space-y-5">
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                          <div className={`rounded-xl border p-4 ${softCardClass}`}>
+                            <div className={`text-xs uppercase tracking-wide ${subtleTextClass}`}>Active Days</div>
+                            <div className="text-2xl font-bold text-green-400 mt-1">{heatmapStats.activeDays}</div>
                           </div>
 
-                          <div className="flex gap-2">
-                            <div className={`grid grid-rows-7 gap-1 text-xs ${subtleTextClass} pt-1`}>
-                              <div>Sun</div>
-                              <div></div>
-                              <div>Tue</div>
-                              <div></div>
-                              <div>Thu</div>
-                              <div></div>
-                              <div>Sat</div>
-                            </div>
+                          <div className={`rounded-xl border p-4 ${softCardClass}`}>
+                            <div className={`text-xs uppercase tracking-wide ${subtleTextClass}`}>Best Day</div>
+                            <div className="text-2xl font-bold text-yellow-400 mt-1">{heatmapStats.bestDay}</div>
+                          </div>
 
-                            <div className="flex gap-1">
-                              {heatmapWeeks.map((week, weekIndex) => (
-                                <div key={weekIndex} className="grid grid-rows-7 gap-1">
-                                  {week.map((cell) => (
-                                    <div
-                                      key={cell.date}
-                                      title={`${cell.date}: ${cell.count} submission${cell.count !== 1 ? 's' : ''}`}
-                                      className={`w-4 h-4 rounded-sm ${getHeatmapCellClass(cell.count)}`}
-                                    />
-                                  ))}
+                          <div className={`rounded-xl border p-4 ${softCardClass}`}>
+                            <div className={`text-xs uppercase tracking-wide ${subtleTextClass}`}>Longest Streak</div>
+                            <div className="text-2xl font-bold text-blue-400 mt-1">{heatmapStats.longestStreak}</div>
+                          </div>
+
+                          <div className={`rounded-xl border p-4 ${softCardClass}`}>
+                            <div className={`text-xs uppercase tracking-wide ${subtleTextClass}`}>Current Streak</div>
+                            <div className="text-2xl font-bold text-orange-400 mt-1">{heatmapStats.currentStreak}</div>
+                          </div>
+                        </div>
+
+                        <div className={`rounded-2xl border p-4 overflow-x-auto ${softCardClass}`}>
+                          <div className="min-w-max">
+                            <div className="flex gap-1 ml-10 mb-3 text-[11px] text-gray-500">
+                              {monthLabels.map((label, index) => (
+                                <div key={`${label}-${index}`} className="w-4 text-center">
+                                  {label}
                                 </div>
                               ))}
                             </div>
-                          </div>
 
-                          <div className={`mt-4 flex items-center justify-between text-sm ${mutedTextClass}`}>
-                            <span>Last 12 weeks</span>
-                            <div className="flex items-center gap-2">
-                              <span>Less</span>
-                              <span className={`w-3 h-3 rounded-sm ${getHeatmapCellClass(0)}`}></span>
-                              <span className={`w-3 h-3 rounded-sm ${getHeatmapCellClass(1)}`}></span>
-                              <span className={`w-3 h-3 rounded-sm ${getHeatmapCellClass(2)}`}></span>
-                              <span className={`w-3 h-3 rounded-sm ${getHeatmapCellClass(4)}`}></span>
-                              <span>More</span>
+                            <div className="flex gap-3">
+                              <div className={`grid grid-rows-7 gap-1 text-[11px] ${subtleTextClass} pt-0.5`}>
+                                <div>Sun</div>
+                                <div></div>
+                                <div>Tue</div>
+                                <div></div>
+                                <div>Thu</div>
+                                <div></div>
+                                <div>Sat</div>
+                              </div>
+
+                              <div className="flex gap-1">
+                                {heatmapWeeks.map((week, weekIndex) => (
+                                  <div key={weekIndex} className="grid grid-rows-7 gap-1">
+                                    {week.map((cell, dayIndex) => (
+                                      <div
+                                        key={cell ? cell.date : `empty-${weekIndex}-${dayIndex}`}
+                                        title={
+                                          cell
+                                            ? `${cell.date}: ${cell.count} submission${cell.count !== 1 ? 's' : ''}`
+                                            : ''
+                                        }
+                                        className={`w-4 h-4 rounded-[4px] transition-all duration-200 ${
+                                          cell
+                                            ? `${getHeatmapCellClass(cell.count)} hover:scale-110 hover:shadow-md`
+                                            : 'bg-transparent'
+                                        }`}
+                                      />
+                                    ))}
+                                  </div>
+                                ))}
+                              </div>
                             </div>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                          <span className={`text-sm ${mutedTextClass}`}>
+                            Darker / brighter cells mean more submissions on that day
+                          </span>
+
+                          <div className={`flex items-center gap-2 text-sm ${mutedTextClass}`}>
+                            <span>Less</span>
+                            <span className={`w-4 h-4 rounded-[4px] ${getHeatmapCellClass(0)}`}></span>
+                            <span className={`w-4 h-4 rounded-[4px] ${getHeatmapCellClass(Math.max(1, Math.ceil(heatmapMaxCount * 0.25)))}`}></span>
+                            <span className={`w-4 h-4 rounded-[4px] ${getHeatmapCellClass(Math.max(1, Math.ceil(heatmapMaxCount * 0.5)))}`}></span>
+                            <span className={`w-4 h-4 rounded-[4px] ${getHeatmapCellClass(Math.max(1, Math.ceil(heatmapMaxCount * 0.75)))}`}></span>
+                            <span className={`w-4 h-4 rounded-[4px] ${getHeatmapCellClass(heatmapMaxCount)}`}></span>
+                            <span>More</span>
                           </div>
                         </div>
                       </div>

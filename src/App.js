@@ -1,7 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
-import LandingPage from './pages/Landing/LandingPage'; // ✅ NEW
+import LandingPage from './pages/Landing/LandingPage';
 import Login from './pages/Auth/Login';
 import Register from './pages/Auth/Register';
 import AdminLogin from './pages/Auth/AdminLogin';
@@ -15,21 +15,20 @@ import Leaderboard from './pages/Leaderboard/Leaderboard';
 import Admin from './pages/Admin/Admin';
 import Contest from './pages/Contest/Contest';
 import ContestLive from './pages/Contest/ContestLive';
+import TermsPage from './pages/Legal/TermsPage';
+import PrivacyPage from './pages/Legal/PrivacyPage';
 
 function App() {
   return (
     <ThemeProvider>
       <Router>
         <Routes>
-          {/* ✅ Landing Page - Default Route */}
           <Route path="/" element={<LandingPage />} />
-          
-          {/* Auth Routes */}
+
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/admin-login" element={<AdminLogin />} />
-          
-          {/* Main App Routes */}
+
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/problems" element={<Problems />} />
           <Route path="/problem/:id" element={<ProblemSolve />} />
@@ -40,6 +39,9 @@ function App() {
           <Route path="/profile" element={<Profile />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
           <Route path="/admin" element={<Admin />} />
+
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
         </Routes>
       </Router>
     </ThemeProvider>

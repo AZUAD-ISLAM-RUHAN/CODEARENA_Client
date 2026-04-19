@@ -27,6 +27,7 @@ function LandingPage() {
     {
       icon: <Users className="w-6 h-6" />,
       title: "Mock Interviews",
+      badge: "Upcoming",
       description: "Simulate real interview scenarios with timed challenges. Get feedback on your performance and improve."
     },
     {
@@ -42,6 +43,7 @@ function LandingPage() {
     {
       icon: <BookOpen className="w-6 h-6" />,
       title: "Curated Study Plans",
+      badge: "Upcoming",
       description: "Follow structured learning paths for top companies. Prepare for FAANG with company-tagged problems."
     },
     {
@@ -301,9 +303,22 @@ function LandingPage() {
                 key={index}
                 className={`group p-6 rounded-2xl border hover:shadow-lg transition-all duration-300 ${isDark ? 'bg-gray-900 border-gray-800 hover:border-yellow-600' : 'bg-gray-50 border-gray-100 hover:border-yellow-300'}`}
               >
-                <div className={`w-12 h-12 rounded-xl shadow-sm flex items-center justify-center mb-4 group-hover:scale-110 transition-transform ${isDark ? 'bg-gray-800 text-yellow-400' : 'bg-white text-gray-900'}`}>
-                  {feature.icon}
+                <div className="flex items-start justify-between gap-3 mb-4">
+                  <div className={`w-12 h-12 rounded-xl shadow-sm flex items-center justify-center group-hover:scale-110 transition-transform ${isDark ? 'bg-gray-800 text-yellow-400' : 'bg-white text-gray-900'}`}>
+                    {feature.icon}
+                  </div>
+
+                  {feature.badge && (
+                    <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${
+                      isDark
+                        ? 'bg-blue-500/10 text-blue-300 border border-blue-500/20'
+                        : 'bg-blue-100 text-blue-700 border border-blue-200'
+                    }`}>
+                      {feature.badge}
+                    </span>
+                  )}
                 </div>
+
                 <h3 className={`text-lg font-semibold mb-2 transition-colors ${isDark ? 'text-white' : 'text-gray-900'}`}>
                   {feature.title}
                 </h3>

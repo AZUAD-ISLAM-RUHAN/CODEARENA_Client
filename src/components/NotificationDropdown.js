@@ -24,6 +24,34 @@ function NotificationDropdown() {
 
   const getToken = () => localStorage.getItem('token');
 
+  const buildActionFromRelatedEntity = (relatedEntity) => {
+    if (!relatedEntity?.entityId) return '/dashboard';
+
+    const entityId =
+      typeof relatedEntity.entityId === 'object'
+        ? relatedEntity.entityId._id || relatedEntity.entityId.id
+        : relatedEntity.entityId;
+
+    if (relatedEntity.entityType === 'Problem') {
+      return `/problem/${entityId}`;
+    }
+
+    return '/dashboard';
+  };
+
+  const mapStoredNotifications = (items = []) => {
+    return items.map((item) => ({
+      id: item._id,
+      read: Boolean(item.isRead),
+      type: item.type,
+      title: item.title,
+      message: item.message,
+      time: formatTime(item.createdAt),
+      createdAt: item.createdAt,
+      action: item.actionUrl || buildActionFromRelatedEntity(item.relatedEntity),
+    }));
+  };
+
   const mapBattleInvitesToNotifications = (invites = []) => {
     return invites.map((battle) => {
       const inviter =
@@ -39,6 +67,7 @@ function NotificationDropdown() {
         title: 'Battle Invite',
         message: `${inviter} invited you to a ${battle?.battleType || 'battle'} battle`,
         time: formatTime(battle?.createdAt),
+        createdAt: battle?.createdAt,
         action: `/battle/${battle._id}`,
         inviterName: inviter,
         problemTitle: battle?.problem?.title || 'Random problem',
@@ -54,30 +83,47 @@ function NotificationDropdown() {
         return;
       }
 
-      const battleInviteResponse = await fetch(`${API_BASE}/battles/invites`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const [battleInviteResult, storedNotificationResult] = await Promise.allSettled([
+        fetch(`${API_BASE}/battles/invites`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }),
+        fetch(`${API_BASE}/notifications`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }),
+      ]);
 
-      if (!battleInviteResponse.ok) {
-        setNotifications([]);
-        return;
+      let battleInviteNotifications = [];
+      let storedNotifications = [];
+
+      if (
+        battleInviteResult.status === 'fulfilled' &&
+        battleInviteResult.value.ok
+      ) {
+        const battleInviteData = await battleInviteResult.value.json();
+        battleInviteNotifications = mapBattleInvitesToNotifications(
+          battleInviteData?.invites || []
+        );
       }
 
-      const battleInviteData = await battleInviteResponse.json();
-      const battleInviteNotifications = mapBattleInvitesToNotifications(
-        battleInviteData?.invites || []
+      if (
+        storedNotificationResult.status === 'fulfilled' &&
+        storedNotificationResult.value.ok
+      ) {
+        const storedNotificationData = await storedNotificationResult.value.json();
+        storedNotifications = mapStoredNotifications(
+          storedNotificationData?.notifications || []
+        );
+      }
+
+      const merged = [...battleInviteNotifications, ...storedNotifications].sort(
+        (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
       );
 
-      setNotifications((prev) => {
-        const previousReadMap = new Map(prev.map((item) => [item.id, item.read]));
-
-        return battleInviteNotifications.map((item) => ({
-          ...item,
-          read: previousReadMap.has(item.id) ? previousReadMap.get(item.id) : false,
-        }));
-      });
+      setNotifications(merged);
     } catch (error) {
       setNotifications([]);
     }
@@ -93,13 +139,26 @@ function NotificationDropdown() {
     return () => clearInterval(intervalId);
   }, []);
 
-  const markAsRead = (id) => {
+  const markAsRead = async (id) => {
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, read: true } : n))
     );
+
+    try {
+      const token = getToken();
+      if (!token) return;
+
+      await fetch(`${API_BASE}/notifications/${id}/read`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+    } catch (error) {
+    }
   };
 
-  const markAllAsRead = () => {
+  const markAllAsRead = async () => {
     setNotifications((prev) =>
       prev.map((n) =>
         n.type === 'battle_invite'
@@ -107,14 +166,27 @@ function NotificationDropdown() {
           : { ...n, read: true }
       )
     );
+
+    try {
+      const token = getToken();
+      if (!token) return;
+
+      await fetch(`${API_BASE}/notifications/read-all`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+    } catch (error) {
+    }
   };
 
-  const handleNotificationClick = (notif) => {
+  const handleNotificationClick = async (notif) => {
     if (notif.type === 'battle_invite') return;
 
-    markAsRead(notif.id);
+    await markAsRead(notif.id);
     setIsOpen(false);
-    navigate(notif.action);
+    navigate(notif.action || '/dashboard');
   };
 
   const handleBattleInviteResponse = async (battleId, response) => {
@@ -154,6 +226,8 @@ function NotificationDropdown() {
   const getIcon = (type) => {
     const icons = {
       battle_invite: '⚔️',
+      discussion_comment: '💬',
+      discussion_reply: '↩️',
       badge_earned: '🏅',
       contest_reminder: '🏆',
       submission_accepted: '✅',
@@ -166,6 +240,8 @@ function NotificationDropdown() {
   const getColor = (type) => {
     const colors = {
       battle_invite: 'text-red-400 bg-red-400/10',
+      discussion_comment: 'text-blue-400 bg-blue-400/10',
+      discussion_reply: 'text-cyan-400 bg-cyan-400/10',
       badge_earned: 'text-purple-400 bg-purple-400/10',
       contest_reminder: 'text-yellow-400 bg-yellow-400/10',
       submission_accepted: 'text-green-400 bg-green-400/10',
