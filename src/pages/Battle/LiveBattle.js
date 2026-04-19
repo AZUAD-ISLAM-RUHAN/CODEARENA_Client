@@ -5,6 +5,7 @@ import ThemeToggle from '../../components/ThemeToggle';
 import { useTheme } from '../../context/ThemeContext';
 
 const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+const DEFAULT_BATTLE_MINUTES = 30;
 
 function LiveBattle() {
   const navigate = useNavigate();
@@ -30,7 +31,7 @@ function LiveBattle() {
     }
   });
 
-  const [timeLeft, setTimeLeft] = useState(1800);
+  const [timeLeft, setTimeLeft] = useState(DEFAULT_BATTLE_MINUTES * 60);
   const [battleStatus, setBattleStatus] = useState('active');
   const [opponent, setOpponent] = useState({
     name: 'Opponent',
@@ -57,6 +58,33 @@ function LiveBattle() {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const getBattleDurationSeconds = (battleData) => {
+    const configuredMinutes = Number(battleData?.timeLimit);
+    const minutes =
+      Number.isFinite(configuredMinutes) && configuredMinutes > 0
+        ? configuredMinutes
+        : DEFAULT_BATTLE_MINUTES;
+
+    return Math.floor(minutes * 60);
+  };
+
+  const calculateTimeLeft = (battleData) => {
+    const durationSeconds = getBattleDurationSeconds(battleData);
+
+    if (!battleData?.startedAt) {
+      return durationSeconds;
+    }
+
+    const startedAtMs = new Date(battleData.startedAt).getTime();
+
+    if (Number.isNaN(startedAtMs)) {
+      return durationSeconds;
+    }
+
+    const elapsedSeconds = Math.floor((Date.now() - startedAtMs) / 1000);
+    return Math.max(durationSeconds - elapsedSeconds, 0);
   };
 
   function handleEditorDidMount(editor) {
@@ -228,6 +256,7 @@ function LiveBattle() {
       const fetchedProblem = nextBattle.problem;
 
       setBattle(nextBattle);
+      setTimeLeft(calculateTimeLeft(nextBattle));
 
       setProblem((prev) => {
         if (
@@ -240,9 +269,6 @@ function LiveBattle() {
         return fetchedProblem;
       });
 
-      const battleTime = (nextBattle.timeLimit || 30) * 60;
-      setTimeLeft((prev) => (showLoader ? battleTime : prev));
-
       if (nextBattle.status === 'completed') {
         const winnerId =
           typeof nextBattle.winner === 'object' && nextBattle.winner !== null
@@ -251,7 +277,7 @@ function LiveBattle() {
 
         setBattleStatus(String(winnerId) === String(resolvedUserId) ? 'won' : 'lost');
       } else {
-        setBattleStatus('active');
+        setBattleStatus(nextBattle.status === 'active' ? 'active' : nextBattle.status);
       }
 
       const players = getBattlePlayers(nextBattle);
@@ -306,20 +332,14 @@ function LiveBattle() {
   }, [battleId, battleStatus]);
 
   useEffect(() => {
-    if (battleStatus !== 'active') return;
+    if (!battle || battleStatus !== 'active') return;
 
     const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          return 0;
-        }
-        return prev - 1;
-      });
+      setTimeLeft(calculateTimeLeft(battle));
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [battleStatus, battleId]);
+  }, [battle, battleStatus]);
 
   const handleRematch = async () => {
     try {
@@ -544,6 +564,7 @@ function LiveBattle() {
 
       if (battleSubmitResponse.ok && battleSubmitData.battle) {
         setBattle(battleSubmitData.battle);
+        setTimeLeft(calculateTimeLeft(battleSubmitData.battle));
 
         const winnerId =
           typeof battleSubmitData.battle.winner === 'object' && battleSubmitData.battle.winner !== null

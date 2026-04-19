@@ -126,8 +126,7 @@ function ContestLive() {
 
     const uiStatus = getUiStatus(contest.status);
 
-    if (uiStatus === 'ended') {
-      fetchLeaderboard();
+    if (uiStatus !== 'ongoing') {
       return;
     }
 
@@ -136,7 +135,17 @@ function ContestLive() {
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [contest]);
+  }, [contestId, contest?.status]);
+
+  useEffect(() => {
+    if (!contest) return;
+
+    const uiStatus = getUiStatus(contest.status);
+
+    if (uiStatus === 'ended') {
+      fetchLeaderboard();
+    }
+  }, [contestId, contest?.status]);
 
   if (loading) {
     return (
